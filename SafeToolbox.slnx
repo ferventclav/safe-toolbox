@@ -1,0 +1,16 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="src/SafeToolbox/SafeToolbox.csproj" />
+    <Project Path="src/SafeToolbox.Core/SafeToolbox.Core.csproj" />
+    <Project Path="src/SafeUpdater.Core/SafeUpdater.Core.csproj" />
+    <Project Path="src/SafeDiskCleaner.Core/SafeDiskCleaner.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SafeToolbox.Core.Tests/SafeToolbox.Core.Tests.csproj" />
+    <Project Path="tests/SafeUpdater.Core.Tests/SafeUpdater.Core.Tests.csproj" />
+    <Project Path="tests/SafeDiskCleaner.Core.Tests/SafeDiskCleaner.Core.Tests.csproj" />
+  </Folder>
+</Solution>

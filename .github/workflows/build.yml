@@ -1,0 +1,142 @@
+name: Build
+
+# Restore, build and test all three core libraries, publish the single-file win-x64 exe, check it
+# really is one file, start it once as a smoke test, and upload SafeToolbox.exe as an artifact.
+# release.yml reuses this.
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to stamp into the build, for example v1.2.0"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+  APP_PROJECT: src/SafeToolbox/SafeToolbox.csproj
+  PUBLISH_DIR: publish
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version
+        id: version
+        shell: pwsh
+        env:
+          RAW_VERSION: ${{ inputs.version }}
+        run: |
+          $v = "$env:RAW_VERSION".Trim().TrimStart('v')
+          if ($v -and $v -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw "Tag '$env:RAW_VERSION' is not a version like v1.2.3" }
+          $prop = if ($v) { "-p:Version=$v" } else { "" }
+          "prop=$prop" >> $env:GITHUB_OUTPUT
+          dotnet --info | Select-Object -First 12
+
+      - name: Test
+        shell: pwsh
+        run: |
+          foreach ($t in Get-ChildItem tests -Recurse -Filter *.Tests.csproj) {
+            dotnet test $t.FullName -c Release ${{ steps.version.outputs.prop }} `
+              --logger "console;verbosity=normal" --logger "trx;LogFileName=$($t.BaseName).trx" --results-directory TestResults
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+
+      - name: Publish (one self-contained exe, win-x64)
+        shell: pwsh
+        run: >
+          dotnet publish $env:APP_PROJECT -c Release -p:Platform=x64
+          ${{ steps.version.outputs.prop }} -o $env:PUBLISH_DIR
+
+      - name: Check the publish is one file
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem $env:PUBLISH_DIR -Recurse -File
+          $files | Format-Table Name, Length
+          if ($files.Count -ne 1 -or $files[0].Name -ne "SafeToolbox.exe") { throw "Expected only SafeToolbox.exe in the publish folder" }
+          "{0:N1} MB" -f ($files[0].Length / 1MB)
+          (Get-Item (Join-Path $env:PUBLISH_DIR "SafeToolbox.exe")).VersionInfo | Format-List FileVersion, ProductVersion
+
+      - name: Smoke test (start the app, wait for its checks, screenshot, close)
+        shell: pwsh
+        run: |
+          # Renamed on purpose: the installed copy is "Safe Toolbox.exe", and WinUI must still find its resources.
+          Copy-Item (Join-Path $env:PUBLISH_DIR "SafeToolbox.exe") "Safe Toolbox.exe"
+          $exe = Resolve-Path "Safe Toolbox.exe"
+          $errLog = Join-Path $env:LOCALAPPDATA "SafeToolbox\error.log"
+          Remove-Item $errLog -ErrorAction SilentlyContinue
+          $start = Get-Date
+          $p = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 30
+          $p.Refresh()
+          if ($p.HasExited) {
+            Write-Host "::error::The app exited after start with code $($p.ExitCode)"
+            if (Test-Path $errLog) { Get-Content $errLog }
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $start } -ErrorAction SilentlyContinue |
+              Where-Object { $_.ProviderName -in 'Application Error', '.NET Runtime', 'Windows Error Reporting' } |
+              Select-Object -First 6 | Format-List TimeCreated, ProviderName, Message
+            exit 1
+          }
+          Write-Host "Running after 30 s. Main window handle: $($p.MainWindowHandle) title: '$($p.MainWindowTitle)'"
+          try {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            New-Item -ItemType Directory -Force smoke | Out-Null
+            $bmp.Save((Join-Path (Get-Location) "smoke\screenshot.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+            Write-Host "Screenshot $($b.Width)x$($b.Height) saved."
+          } catch {
+            Write-Host "::warning::No screenshot: $($_.Exception.Message)"
+          }
+          Stop-Process -Id $p.Id -Force
+          if (Test-Path $errLog) {
+            Write-Host "::error::The app wrote error.log during the smoke test:"
+            Get-Content $errLog
+            exit 1
+          }
+
+      - name: Upload SafeToolbox.exe
+        uses: actions/upload-artifact@v7
+        with:
+          name: SafeToolbox-win-x64
+          path: publish/SafeToolbox.exe
+          if-no-files-found: error
+
+      - name: Upload smoke-test screenshot
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-test-screenshot
+          path: smoke/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results
+          path: TestResults/
+          if-no-files-found: ignore
+          retention-days: 14

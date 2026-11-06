@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Settings, schedules, history, storage and health tools shared by the app pages. No UI. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>SafeToolbox.Core</RootNamespace>
+    <AssemblyName>SafeToolbox.Core</AssemblyName>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SafeToolbox.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="10.0.13" />
+    <PackageReference Include="System.Diagnostics.EventLog" Version="10.0.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SafeUpdater.Core\SafeUpdater.Core.csproj" />
+    <ProjectReference Include="..\SafeDiskCleaner.Core\SafeDiskCleaner.Core.csproj" />
+  </ItemGroup>
+
+</Project>

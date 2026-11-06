@@ -1,0 +1,44 @@
+name: Release
+
+# On a v* tag: run the same build as build.yml (tests and smoke test included), then publish a
+# GitHub Release with SafeToolbox.exe and its SHA-256. Only the owner pushes tags, so a pushed
+# tag is the decision to release. The repo is public, so anyone can download the release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ github.ref_name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: SafeToolbox-win-x64
+
+      - name: Checksum
+        run: sha256sum SafeToolbox.exe | tee SafeToolbox.exe.sha256
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          draft: false
+          name: Safe Toolbox ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          files: |
+            SafeToolbox.exe
+            SafeToolbox.exe.sha256
+          body: |
+            Download `SafeToolbox.exe` and run it. It is the whole app: no installer, no other files.
+            The first start takes a couple of seconds while it unpacks itself. Windows may show a
+            SmartScreen warning because the app is not code-signed: choose **More info**, then
+            **Run anyway**. See the README for what each page does and what it never touches.
