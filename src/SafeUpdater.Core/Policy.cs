@@ -129,15 +129,7 @@ public static partial class Policy
         {
             item.Badge = "Driver";
             string installed = item.InstalledDriverDate is DateTime inst ? $" (yours is from {inst:d MMM yyyy})" : "";
-            if (item.Optional)
-            {
-                tick = false;
-                item.Note = $"Newer than the driver you have{installed}, but optional. Windows only suggests optional drivers when something isn't working.";
-            }
-            else
-            {
-                item.Note = $"A driver update Windows recommends. Newer than the one you have{installed}.";
-            }
+            item.Note = $"A driver update Windows recommends. Newer than the one you have{installed}.";
         }
 
         if (item.Source == UpdateSource.Python && item.Note is null
@@ -231,6 +223,11 @@ public static partial class Policy
                 if (offered <= installed)
                 {
                     return ("Not newer", $"This driver is dated {offered:d MMM yyyy}. The one already on the device is from {installed:d MMM yyyy}, so installing it would replace a newer or equal driver.");
+                }
+                // Settings shows optional drivers only under Advanced options, Optional updates, and installs them only on request.
+                if (item.Optional)
+                {
+                    return ("Optional", "Windows marks this driver optional, so Settings lists it only under Windows Update, Advanced options, Optional updates. Install it from there if this device has a problem.");
                 }
             }
         }

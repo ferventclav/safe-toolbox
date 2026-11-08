@@ -110,7 +110,8 @@ public static class ProcessRunner
     /// <summary>Runs a PowerShell script without quoting trouble (passed as -EncodedCommand).</summary>
     public static Task<ProcResult> PowerShellAsync(string script, TimeSpan timeout, CancellationToken ct = default)
     {
-        string wrapped = "[Console]::OutputEncoding = [Text.Encoding]::UTF8\n" + script;
+        // No progress records: with redirected output PowerShell writes them as CLIXML into the text we parse.
+        string wrapped = "[Console]::OutputEncoding = [Text.Encoding]::UTF8\n$ProgressPreference = 'SilentlyContinue'\n" + script;
         string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(wrapped));
         return RunAsync(Tools.PowerShell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded], timeout, ct: ct);
     }

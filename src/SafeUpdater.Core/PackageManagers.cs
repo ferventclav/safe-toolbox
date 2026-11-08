@@ -261,16 +261,19 @@ public static class Preflight
     public const string RestorePointScript = """
         $w = $null
         try {
-            Checkpoint-Computer -Description 'Before Safe Updater' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop -WarningVariable w -WarningAction SilentlyContinue
+            Checkpoint-Computer -Description 'Before Safe Toolbox updates' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop -WarningVariable w -WarningAction SilentlyContinue
             if ($w) { "SKIPPED: $w" } else { "CREATED" }
         } catch { "FAILED: $($_.Exception.Message)" }
         """;
 
     public static string DescribeRestorePoint(string output)
     {
-        string line = output.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.Length > 0) ?? "";
+        // The script's own result line, wherever it is: PowerShell can add progress records (CLIXML) after it.
+        string line = output.Split('\n').Select(l => l.Trim())
+            .LastOrDefault(l => l.StartsWith("CREATED", StringComparison.Ordinal) || l.StartsWith("SKIPPED", StringComparison.Ordinal) || l.StartsWith("FAILED", StringComparison.Ordinal)) ?? "";
         return line.StartsWith("CREATED", StringComparison.Ordinal) ? "Made a restore point before updating."
             : line.StartsWith("SKIPPED", StringComparison.Ordinal) ? "Windows already made a restore point in the last 24 hours, so it didn't make another."
-            : "No restore point was made (System Restore may be off on this PC; Safe Updater doesn't turn it on).";
+            : line.StartsWith("FAILED: ", StringComparison.Ordinal) ? $"No restore point was made: {line["FAILED: ".Length..].TrimEnd('.')}. Safe Toolbox never turns System Restore on."
+            : "No restore point was made, and Windows didn't say why. Safe Toolbox never turns System Restore on.";
     }
 }

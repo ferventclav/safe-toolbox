@@ -165,6 +165,9 @@ public class SourceTests
     [InlineData("SKIPPED: A new system restore point cannot be created because one has already been created within the past 1440 minutes.", "24 hours")]
     [InlineData("FAILED: The service cannot be started, either because it is disabled", "No restore point")]
     [InlineData("", "No restore point")]
+    // The 8 Nov run: PowerShell printed its progress record as CLIXML after the result line.
+    [InlineData("#< CLIXML\nSKIPPED: A new system restore point cannot be created because one has already been created within the past 1440 minutes.\n<Objs Version=\"1.1.0.1\"><Obj S=\"progress\" RefId=\"0\"></Obj></Objs>", "24 hours")]
+    [InlineData("FAILED: System Restore is turned off\n<Objs Version=\"1.1.0.1\"></Objs>", "System Restore is turned off")]
     public void Restore_point_outcomes(string output, string expected)
     {
         Assert.Contains(expected, Preflight.DescribeRestorePoint(output));

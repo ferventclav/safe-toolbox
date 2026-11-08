@@ -156,7 +156,6 @@ public class PolicyTests
 
         // ---- listed but left unticked: safe, your call
         ["unknown installed version"] = new(() => App("Ubisoft.Connect", "< 175.0.0.13393", "175.0.0.13393"), Listed),
-        ["optional driver that is newer"] = new(() => Driver(Jul2026, Jan2025, optional: true), Listed),
         ["same-family entry once majors are on"] = new(() => App("OpenJS.NodeJS.LTS", "24.15.0", "24.22.1", target: "24.22.1"), Listed, Ctx: Ctx(majors: true)),
         ["NVIDIA driver is information only"] = new(() => new UpdateItem
         {
@@ -202,6 +201,7 @@ public class PolicyTests
         ["driver the same age as the installed one"] = new(() => Driver(Jan2025, Jan2025), "Not newer"),
         ["old driver stays hidden with majors on"] = new(() => Driver(new DateTime(2017, 9, 19), Jan2025), "Old driver", Ctx: Ctx(majors: true)),
         ["optional older driver is hidden, not just unticked"] = new(() => Driver(Jan2025, Jul2026, optional: true), "Not newer"),
+        ["optional newer driver waits in Settings' Optional updates"] = new(() => Driver(Jul2026, Jan2025, optional: true), "Optional"),
         // ---- 9. majors of libraries and runtimes
         ["pip major (the av 19 case)"] = new(() => Pip("av", "18.0.0", "19.0.2"), "Major version"),
         ["pip 0.x minor counts as major"] = new(() => Pip("tokenizers", "0.21.4", "0.22.1"), "Major version"),

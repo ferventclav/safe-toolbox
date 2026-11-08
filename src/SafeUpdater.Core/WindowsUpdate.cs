@@ -21,6 +21,11 @@ public static class WindowsUpdateSource
         $r = $q.Search("IsInstalled=0 and IsHidden=0")
         $devices = $null
         $list = foreach ($u in $r.Updates) {
+            # Definition Updates (Defender): Defender refreshes them by itself several times a day and Settings
+            # doesn't list them. Matched by classification id, so it works in any display language.
+            $definition = $false
+            foreach ($c in $u.Categories) { if ($c.CategoryID -eq 'e0789628-ce08-4437-be74-2495b842f43b') { $definition = $true } }
+            if ($definition) { continue }
             $isDriver = $u.Type -eq 2
             $date = $null; $installed = $null
             if ($isDriver) {
@@ -79,7 +84,8 @@ public static class WindowsUpdateSource
                 Id = rec.Id,
                 Name = rec.Title,
                 Current = rec.Driver ? "Driver" : "",
-                Available = rec.SizeMb > 0 ? $"{rec.SizeMb:0.#} MB" : "",
+                // Windows reports the largest package; the real download is often a much smaller part of it.
+                Available = rec.SizeMb > 0 ? $"up to {rec.SizeMb:0.#} MB" : "",
                 DriverDate = rec.DriverDate,
                 InstalledDriverDate = rec.InstalledDate,
                 Optional = rec.Optional,
