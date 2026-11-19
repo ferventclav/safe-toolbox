@@ -21,7 +21,7 @@ internal sealed class StoragePage : PageBase
 
     private readonly ComboBox _size = new() { MinWidth = 120 };
     private readonly ComboBox _kind = new() { MinWidth = 160 };
-    private readonly StackPanel _rows = new() { Spacing = 2, Padding = new Thickness(0, 0, 12, 16) };
+    private readonly StackPanel _rows = new() { Spacing = 4, Padding = new Thickness(0, 0, 12, 12) };
     private readonly TextBlock _summary = Text("", "SubtitleTextBlockStyle", wrap: false);
     private readonly TextBlock _summarySub = Muted("");
     private readonly Button _scan;
@@ -52,7 +52,7 @@ internal sealed class StoragePage : PageBase
 
         var filters = Row(12, _size, _kind);
         filters.Margin = new Thickness(0, 0, 0, 12);
-        var body = new Grid { Padding = new Thickness(24, 8, 24, 0) };
+        var body = new Grid { Padding = new Thickness(16, 0, 16, 0) };
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         body.Children.Add(filters);
@@ -90,6 +90,14 @@ internal sealed class StoragePage : PageBase
         {
             return;
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            ToolboxPaths.WriteError("Big files scan failed: " + ex);
+            _summary.Text = "";
+            StatusText.Text = "";
+            ShowError("The search stopped", ex.Message);
+            return;
+        }
         finally
         {
             if (_cts == cts)
@@ -125,7 +133,7 @@ internal sealed class StoragePage : PageBase
 
     private UIElement BuildRow(BigFile f, string downloads)
     {
-        var badges = Row(6, Badge(BigFiles.KindName(f.Kind)));
+        var badges = Row(8, Badge(BigFiles.KindName(f.Kind)));
         if (f.Kind == FileKind.Installer && SafeDiskCleaner.Core.PathUtil.Under(f.Path, downloads))
         {
             badges.Children.Add(Badge("Installer in Downloads: you can usually download it again", "success"));
@@ -138,22 +146,22 @@ internal sealed class StoragePage : PageBase
         {
             badges.Children.Add(Badge("A model an AI tool may still use", "caution"));
         }
-        var names = Stack(2, Text(f.Name, "BodyStrongTextBlockStyle", wrap: false), Text(f.Folder, "MutedCaptionStyle", wrap: false), badges);
+        var names = Stack(4, Text(f.Name, "BodyStrongTextBlockStyle", wrap: false), Text(f.Folder, "MutedCaptionStyle", wrap: false), badges);
         var size = Stack(0, Text(SafeDiskCleaner.Core.SizeFormat.Format(f.Size), "BodyStrongTextBlockStyle", wrap: false), Muted(f.Modified.ToString("d MMM yyyy")));
         size.MinWidth = 96;
-        var show = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 } };
+        var show = new Button { Content = new FontIcon { Glyph = "", FontSize = 16 } };
         AutomationProperties.SetName(show, "Show " + f.Name + " in its folder");
         ToolTipService.SetToolTip(show, "Show in folder");
         show.Click += (_, _) => ShowInFolder(f.Path);
-        var recycle = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 } };
+        var recycle = new Button { Content = new FontIcon { Glyph = "", FontSize = 16 } };
         AutomationProperties.SetName(recycle, "Move " + f.Name + " to the Recycle Bin");
         ToolTipService.SetToolTip(recycle, "Move to the Recycle Bin");
-        var row = new Border { Style = S("RowStyle") };
-        recycle.Click += async (_, _) => await RecycleAsync(f, row);
-        var actions = Row(6, show, recycle);
+        ListRow? row = null;
+        recycle.Click += async (_, _) => await RecycleAsync(f, row!.Root);
+        var actions = Row(8, show, recycle);
         actions.VerticalAlignment = VerticalAlignment.Center;
-        row.Child = Columns((Icon(Glyph(f.Kind), 18, "IconMuted"), Auto), (names, Star), (size, Auto), (actions, Auto));
-        return row;
+        row = new ListRow(Columns((Icon(Glyph(f.Kind), 20, "IconMuted"), Auto), (names, Star), (size, Auto), (actions, Auto)));
+        return row.Root;
     }
 
     private async Task RecycleAsync(BigFile f, Border row)
@@ -163,7 +171,7 @@ internal sealed class StoragePage : PageBase
         {
             msg += "\n\nIt is very large, so Windows may say it is too big for the Recycle Bin and ask whether to delete it for good. Say No if you're not sure.";
         }
-        if (await Shell.AskAsync("Move to the Recycle Bin?", msg, "Move to Recycle Bin") != ContentDialogResult.Primary)
+        if (await Shell.AskAsync("Move to the Recycle Bin?", msg, "Move to Recycle Bin", "Keep the file") != ContentDialogResult.Primary)
         {
             return;
         }

@@ -35,8 +35,11 @@ public partial class App : Application
     {
         try
         {
+            // Before the activation is read: Windows App SDK ends the process if a click on a notification is
+            // read before the app has registered for notifications.
+            Notifier.Initialize();
             Appearance.ApplyStartupShades(_settings);
-            _window = new MainWindow(_settings) { StartPage = Notifier.PageFromActivation(AppInstance.GetCurrent().GetActivatedEventArgs()) };
+            _window = new MainWindow(_settings) { StartPage = StartPageFromActivation() };
         }
         catch (Exception ex)
         {
@@ -55,7 +58,25 @@ public partial class App : Application
             {
                 ToolboxPaths.WriteError("Removing old unpack folders failed: " + ex.Message);
             }
+            if (Environment.ProcessPath is string exe && Schedule.Repair(_settings, exe) is string error)
+            {
+                ToolboxPaths.WriteError("Updating the background task failed: " + error);
+            }
         });
+    }
+
+    /// <summary>The page a clicked notification asked for. If Windows can't say, the app just opens normally.</summary>
+    private static string? StartPageFromActivation()
+    {
+        try
+        {
+            return Notifier.PageFromActivation(AppInstance.GetCurrent().GetActivatedEventArgs());
+        }
+        catch (Exception ex) when (ex is TimeoutException or System.Runtime.InteropServices.COMException)
+        {
+            ToolboxPaths.WriteError("Couldn't read how the app was started: " + ex.Message);
+            return null;
+        }
     }
 
     /// <summary>A second launch (Start menu, shortcut, notification) lands here instead of opening a second window.</summary>

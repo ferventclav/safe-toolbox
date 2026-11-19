@@ -52,13 +52,6 @@ public static class WindowsUpdateSource
         ConvertTo-Json -InputObject @($list) -Compress -Depth 3
         """;
 
-    internal const string StoreScanScript = """
-        $ErrorActionPreference = 'Stop'
-        $r = Get-CimInstance -Namespace 'root\cimv2\mdm\dmmap' -ClassName 'MDM_EnterpriseModernAppManagement_AppManagement01' |
-            Invoke-CimMethod -MethodName UpdateScanMethod
-        "ReturnValue=$($r.ReturnValue)"
-        """;
-
     public static async Task<SourceResult> CheckAsync(CancellationToken ct)
     {
         ProcResult r = await ProcessRunner.PowerShellAsync(SearchScript, TimeSpan.FromMinutes(6), ct);
@@ -66,7 +59,6 @@ public static class WindowsUpdateSource
         var items = new List<UpdateItem>();
         if (records is null)
         {
-            items.Add(StoreItem());
             return new SourceResult
             {
                 Source = UpdateSource.Windows,
@@ -85,7 +77,7 @@ public static class WindowsUpdateSource
                 Name = rec.Title,
                 Current = rec.Driver ? "Driver" : "",
                 // Windows reports the largest package; the real download is often a much smaller part of it.
-                Available = rec.SizeMb > 0 ? $"up to {rec.SizeMb:0.#} MB" : "",
+                Available = rec.SizeMb > 0 ? SizeText(rec.SizeMb) : "",
                 DriverDate = rec.DriverDate,
                 InstalledDriverDate = rec.InstalledDate,
                 Optional = rec.Optional,
@@ -93,7 +85,6 @@ public static class WindowsUpdateSource
                 NeedsAdmin = true,
             });
         }
-        items.Add(StoreItem());
         return new SourceResult
         {
             Source = UpdateSource.Windows,
@@ -102,15 +93,7 @@ public static class WindowsUpdateSource
         };
     }
 
-    private static UpdateItem StoreItem() => new()
-    {
-        Source = UpdateSource.Windows,
-        Kind = ItemKind.StoreScan,
-        Id = "store-scan",
-        Name = "Microsoft Store apps",
-        Available = "Ask the Store to update",
-        NeedsAdmin = true,
-    };
+    public static string SizeText(double mb) => mb >= 1024 ? $"up to {mb / 1024:0.#} GB" : $"up to {mb:0.#} MB";
 
     /// <summary>The JSON line from <see cref="SearchScript"/>; null when the search failed.</summary>
     public static List<Record>? ParseSearch(string output)
@@ -168,20 +151,38 @@ public static class WindowsUpdateSource
             }
             $out = @()
             if ($col.Count -gt 0) {
-                $d = $s.CreateUpdateDownloader(); $d.Updates = $col; [void]$d.Download()
+                $d = $s.CreateUpdateDownloader(); $d.Updates = $col; $dl = $d.Download()
                 $i = $s.CreateUpdateInstaller(); $i.Updates = $col; $res = $i.Install()
                 for ($k = 0; $k -lt $col.Count; $k++) {
-                    $out += [pscustomobject]@{ id = $col.Item($k).Identity.UpdateID; result = $res.GetUpdateResult($k).ResultCode; reboot = $res.RebootRequired }
+                    $one = $res.GetUpdateResult($k)
+                    $out += [pscustomobject]@{ id = $col.Item($k).Identity.UpdateID; result = $one.ResultCode; hresult = $one.HResult; download = $dl.GetUpdateResult($k).ResultCode; reboot = $res.RebootRequired }
                 }
             }
             ConvertTo-Json -InputObject @($out) -Compress
             """;
     }
 
-    public sealed record InstallResult(string Id, int ResultCode, bool Reboot)
+    public sealed record InstallResult(string Id, int ResultCode, bool Reboot, int Download = 0, int HResult = 0)
     {
         /// <summary>2 = succeeded, 3 = succeeded with errors.</summary>
         public bool Succeeded => ResultCode is 2 or 3;
+
+        /// <summary>Windows Update's codes in words: 0 not started, 1 in progress, 4 failed, 5 aborted.</summary>
+        public string Failure
+        {
+            get
+            {
+                string code = HResult != 0 ? $" (0x{HResult:X8})" : "";
+                return (Download, ResultCode) switch
+                {
+                    (4 or 5, _) => "Windows Update couldn't download it. Try again from Windows Update in Settings.",
+                    (_, 0) => "Windows Update didn't start the install. It may be busy with another update, so check Windows Update in Settings.",
+                    (_, 1) => "Windows Update is still installing it. Check Windows Update in Settings.",
+                    (_, 5) => "The install was cancelled.",
+                    _ => "Windows Update couldn't install it" + code + ".",
+                };
+            }
+        }
     }
 
     public static List<InstallResult> ParseInstall(string output)
@@ -201,7 +202,9 @@ public static class WindowsUpdateSource
                 list.Add(new InstallResult(
                     Str(e, "id"),
                     e.TryGetProperty("result", out JsonElement rc) && rc.ValueKind == JsonValueKind.Number ? rc.GetInt32() : 0,
-                    e.TryGetProperty("reboot", out JsonElement rb) && rb.ValueKind == JsonValueKind.True));
+                    e.TryGetProperty("reboot", out JsonElement rb) && rb.ValueKind == JsonValueKind.True,
+                    Number(e, "download"),
+                    Number(e, "hresult")));
             }
         }
         catch (JsonException)
@@ -209,6 +212,9 @@ public static class WindowsUpdateSource
         }
         return list;
     }
+
+    private static int Number(JsonElement e, string name) =>
+        e.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out long n) ? unchecked((int)n) : 0;
 
     private static bool IsGuid(string s) => Guid.TryParse(s, out _);
 

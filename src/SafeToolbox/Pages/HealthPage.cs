@@ -23,7 +23,7 @@ internal sealed class HealthSnapshot
 /// </summary>
 internal sealed class HealthPage : PageBase
 {
-    private readonly StackPanel _panel = new() { Spacing = 16, Padding = new Thickness(0, 0, 0, 24) };
+    private readonly StackPanel _panel = new() { Spacing = 12, Padding = new Thickness(0, 0, 0, 16) };
     private readonly TextBlock _summary = Text("", "SubtitleTextBlockStyle", wrap: false);
     private readonly TextBlock _summarySub = Muted("");
     private Task<HealthSnapshot>? _snapshot;
@@ -55,7 +55,7 @@ internal sealed class HealthPage : PageBase
     /// <summary>One read shared by Home and this page; read again after ten minutes or on Check again.</summary>
     public Task<HealthSnapshot> GetSnapshotAsync()
     {
-        if (_snapshot is null || (_snapshot.IsCompleted && DateTime.Now - _snapshot.Result.Taken > TimeSpan.FromMinutes(10)))
+        if (_snapshot is null || _snapshot.IsFaulted || (_snapshot.IsCompletedSuccessfully && DateTime.Now - _snapshot.Result.Taken > TimeSpan.FromMinutes(10)))
         {
             _snapshot = Task.Run(() => new HealthSnapshot
             {
@@ -79,7 +79,20 @@ internal sealed class HealthPage : PageBase
         StatusText.Text = "Reading Windows' records…";
         WorkBar.Visibility = Visibility.Visible;
         WorkBar.IsIndeterminate = true;
-        HealthSnapshot h = await GetSnapshotAsync();
+        HealthSnapshot h;
+        try
+        {
+            h = await GetSnapshotAsync();
+        }
+        catch (Exception ex)
+        {
+            ToolboxPaths.WriteError("Health read failed: " + ex);
+            WorkBar.IsIndeterminate = false;
+            WorkBar.Visibility = Visibility.Collapsed;
+            StatusText.Text = "";
+            ShowError("Windows' records couldn't be read", "Press Check again to retry. Details are in error.log.");
+            return;
+        }
         WorkBar.IsIndeterminate = false;
         WorkBar.Visibility = Visibility.Collapsed;
         StatusText.Text = $"Read {Ago(h.Taken)}.";
@@ -102,7 +115,7 @@ internal sealed class HealthPage : PageBase
 
     private Border StabilityCard(HealthSnapshot h)
     {
-        var body = Stack(10);
+        var body = Stack(12);
         if (h.Crashes.Count == 0)
         {
             body.Children.Add(Row(8, Icon("", 16, "IconSuccess"), Text("No blue screens or unexpected shutdowns in the last 90 days.")));
@@ -115,7 +128,7 @@ internal sealed class HealthPage : PageBase
                 CrashKind.PowerLoss => "Lost power or was forced off (no stop code)",
                 _ => "Shut down unexpectedly",
             };
-            var lines = Stack(2, Text(what, "BodyStrongTextBlockStyle"), Muted($"{c.When:ddd d MMM yyyy, HH:mm} · {c.Source}"));
+            var lines = Stack(4, Text(what, "BodyStrongTextBlockStyle"), Muted($"{c.When:ddd d MMM yyyy, HH:mm} · {c.Source}"));
             if (c.StopCode is uint code)
             {
                 if (StopCodes.Hint(code) is string hint)
@@ -145,7 +158,7 @@ internal sealed class HealthPage : PageBase
 
     private Border DrivesCard(HealthSnapshot h)
     {
-        var body = Stack(10);
+        var body = Stack(12);
         if (h.Drives.Count == 0)
         {
             body.Children.Add(Muted("Windows didn't report any drives.", caption: false));
@@ -153,7 +166,7 @@ internal sealed class HealthPage : PageBase
         foreach (DriveHealth d in h.Drives)
         {
             string tone = d.Healthy ? "success" : d.Health == "Warning" ? "caution" : d.Health == "Unknown" ? "neutral" : "critical";
-            var lines = Stack(2, Text(d.Name, "BodyStrongTextBlockStyle"),
+            var lines = Stack(4, Text(d.Name, "BodyStrongTextBlockStyle"),
                 Muted($"{d.Media}{(d.Bus.Length > 0 ? " · " + d.Bus : "")} · {SafeDiskCleaner.Core.SizeFormat.FormatGb(d.Size)} · status {d.Status}"));
             if (_wear?.FirstOrDefault(w => w.DeviceId == d.Name) is DriveWear w)
             {
@@ -203,11 +216,11 @@ internal sealed class HealthPage : PageBase
 
     private Border BatteryCard(HealthSnapshot h)
     {
-        var body = Stack(10);
+        var body = Stack(12);
         foreach (BatteryHealth b in h.Batteries)
         {
             string tone = b.Percent >= 80 ? "success" : b.Percent >= 60 ? "caution" : "critical";
-            var lines = Stack(2,
+            var lines = Stack(4,
                 Text($"Holds {b.Percent:0}% of the charge it held new", "BodyStrongTextBlockStyle"),
                 Muted($"{b.Name} · {b.FullChargeCapacity:N0} of {b.DesignCapacity:N0} mWh" + (b.CycleCount is int c ? $" · {c} charge cycles" : "")),
                 Muted(b.Percent >= 80
@@ -216,6 +229,7 @@ internal sealed class HealthPage : PageBase
                         ? "Worn. It runs for less time than new; that is normal after a few years, and nothing needs doing yet."
                         : "Heavily worn. If it drains fast or the PC shuts down on battery, a replacement battery helps.", caption: false));
             var bar = new ProgressBar { Minimum = 0, Maximum = 100, Value = b.Percent, Margin = new Thickness(0, 4, 0, 0) };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(bar, $"Battery holds {b.Percent:0} percent of its new charge");
             body.Children.Add(Columns((Stack(4, lines, bar), Star), (Badge($"{b.Percent:0}%", tone), Auto)));
         }
         body.Children.Add(Ui.Button("Open the full battery report", async (_, _) =>
@@ -233,7 +247,7 @@ internal sealed class HealthPage : PageBase
 
     private Border SystemCard(HealthSnapshot h)
     {
-        var body = Stack(10);
+        var body = Stack(12);
         if (h.Antivirus.Count == 0)
         {
             body.Children.Add(Row(8, Icon("", 16, "IconCaution"), Text("Windows Security didn't report an antivirus.")));
@@ -258,7 +272,7 @@ internal sealed class HealthPage : PageBase
     }
 
     private static Border Section(string glyph, string title, string sub, UIElement body) =>
-        Card(Stack(12, CardHeader(glyph, title, sub), body), 20);
+        Card(Stack(12, CardHeader(glyph, title, sub), body));
 
     private static string Uptime(TimeSpan t) => t.TotalDays >= 1
         ? $"{(int)t.TotalDays} day{((int)t.TotalDays == 1 ? "" : "s")} {t.Hours} h"

@@ -7,7 +7,7 @@
 
     <Grid x:Name="RootGrid" Background="Transparent">
         <Grid.RowDefinitions>
-            <RowDefinition Height="48" />
+            <RowDefinition Height="32" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -15,8 +15,8 @@
         <Border x:Name="SolidBackdrop" Grid.RowSpan="2" Style="{StaticResource SolidBackdropStyle}" Visibility="Collapsed" />
 
         <!-- Title bar: icon and name; Windows draws the caption buttons. -->
-        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="48" Padding="16,0,0,0" Background="Transparent">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="12">
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="32" Padding="16,0,0,0" Background="Transparent">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
                 <Image x:Name="TitleBarIcon" Width="16" Height="16" VerticalAlignment="Center" />
                 <TextBlock x:Name="TitleBarText" Text="Safe Toolbox" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
             </StackPanel>
@@ -27,9 +27,9 @@
                         IsBackButtonVisible="Collapsed"
                         IsSettingsVisible="True"
                         PaneDisplayMode="Auto"
-                        OpenPaneLength="232"
-                        CompactModeThresholdWidth="900"
-                        ExpandedModeThresholdWidth="1280"
+                        OpenPaneLength="320"
+                        CompactModeThresholdWidth="641"
+                        ExpandedModeThresholdWidth="1008"
                         IsTitleBarAutoPaddingEnabled="False"
                         SelectionChanged="Nav_SelectionChanged">
             <NavigationView.MenuItems>

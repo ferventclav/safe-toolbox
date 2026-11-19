@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security;
 using System.Security.Principal;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace SafeToolbox.Core;
 
@@ -9,10 +10,24 @@ namespace SafeToolbox.Core;
 /// One Task Scheduler task, "Safe Toolbox background check", that runs "SafeToolbox.exe --background"
 /// as you (never elevated). It only checks and notifies; nothing is installed or deleted in the background.
 /// A missed run (PC off or asleep) runs at the next chance, as Task Scheduler's StartWhenAvailable does.
+/// The exe starts through a windowless cmd with RunAsInvoker, so a "Run as administrator" compatibility
+/// setting on the exe can't stop the task: without it Windows refuses the launch with 0x800702E4.
 /// </summary>
-public static class Schedule
+public static partial class Schedule
 {
     public const string TaskName = "Safe Toolbox background check";
+
+    private const string RunAsInvoker = "__COMPAT_LAYER=RunAsInvoker";
+    private const string BackgroundSuffix = "\" --background";
+    private const int ElevationRequired = unchecked((int)0x800702E4);
+
+    [GeneratedRegex("\"([^\"]*)\"")]
+    private static partial Regex CsvField();
+
+    /// <summary>What the task starts: conhost without a window, then cmd, then the exe as the current user.</summary>
+    public static (string Command, string Arguments) TaskAction(string exePath) => (
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "conhost.exe"),
+        $"--headless cmd.exe /d /c \"set \"{RunAsInvoker}\"&\"{exePath}{BackgroundSuffix}\"");
 
     /// <summary>Daily when either job is daily, weekly when both are weekly, null when both are off.</summary>
     public static Frequency? TaskFrequency(ToolboxSettings s) =>
@@ -33,6 +48,7 @@ public static class Schedule
             ? "<ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>"
             : "<ScheduleByWeek><DaysOfWeek><Sunday /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek>";
         string dir = Path.GetDirectoryName(exePath) ?? "";
+        (string command, string arguments) = TaskAction(exePath);
         return $"""
             <?xml version="1.0" encoding="UTF-16"?>
             <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -76,8 +92,8 @@ public static class Schedule
               </Settings>
               <Actions Context="Author">
                 <Exec>
-                  <Command>"{SecurityElement.Escape(exePath)}"</Command>
-                  <Arguments>--background</Arguments>
+                  <Command>{SecurityElement.Escape(command)}</Command>
+                  <Arguments>{SecurityElement.Escape(arguments)}</Arguments>
                   <WorkingDirectory>{SecurityElement.Escape(dir)}</WorkingDirectory>
                 </Exec>
               </Actions>
@@ -112,17 +128,67 @@ public static class Schedule
 
     public static bool Exists() => Schtasks($"/Query /TN \"{TaskName}\"").Code == 0;
 
-    /// <summary>The program the existing task runs, so a moved app can re-point it.</summary>
-    public static string? RegisteredExe()
+    /// <summary>The exe a registered task runs, and whether the task already starts it the current way.</summary>
+    public static (string? Exe, bool Current) ParseRegistered(string xml)
     {
+        string command = Element(xml, "Command").Trim('"');
+        string arguments = Element(xml, "Arguments");
+        int end = arguments.LastIndexOf(BackgroundSuffix, StringComparison.Ordinal);
+        if (end > 0 && arguments.Contains(RunAsInvoker, StringComparison.Ordinal))
+        {
+            int start = arguments.LastIndexOf('"', end - 1);
+            return (arguments[(start + 1)..end], true);
+        }
+        return (command.Length > 0 ? command : null, false);
+    }
+
+    /// <summary>
+    /// Brings an existing task up to date when this exe owns it, or when the exe it names is gone. A copy run
+    /// from somewhere else leaves a working task alone. Returns an error message, or null.
+    /// </summary>
+    public static string? Repair(ToolboxSettings s, string exePath)
+    {
+        if (TaskFrequency(s) is null)
+        {
+            return null;
+        }
         (int code, string xml) = Schtasks($"/Query /TN \"{TaskName}\" /XML");
         if (code != 0)
         {
             return null;
         }
-        int a = xml.IndexOf("<Command>", StringComparison.Ordinal);
-        int b = xml.IndexOf("</Command>", StringComparison.Ordinal);
-        return a >= 0 && b > a ? SecurityElementUnescape(xml[(a + 9)..b]).Trim('"') : null;
+        (string? exe, bool current) = ParseRegistered(xml);
+        bool mine = string.Equals(exe, exePath, StringComparison.OrdinalIgnoreCase);
+        bool gone = exe is null || !File.Exists(exe);
+        return mine && !current || !mine && gone ? Sync(s, exePath) : null;
+    }
+
+    /// <summary>The "Last Result" column of schtasks /Query /FO CSV /V /NH, as a signed HRESULT.</summary>
+    public static int? ParseLastResult(string csv)
+    {
+        MatchCollection fields = CsvField().Matches(csv);
+        return fields.Count > 6 && long.TryParse(fields[6].Groups[1].Value, out long v) ? unchecked((int)v) : null;
+    }
+
+    /// <summary>What went wrong last time in plain words, or null when the task ran, is running or hasn't run yet.</summary>
+    public static string? DescribeLastResult(int? result) => result switch
+    {
+        null or 0 or (>= 0x41300 and <= 0x41303) or 0x41325 => null,
+        ElevationRequired => "The last background check didn't start, because Windows asked for admin first.",
+        int r => $"The last background check didn't finish (code 0x{r:X8}). Details may be in error.log.",
+    };
+
+    public static string? LastProblem()
+    {
+        (int code, string csv) = Schtasks($"/Query /TN \"{TaskName}\" /FO CSV /V /NH");
+        return code == 0 ? DescribeLastResult(ParseLastResult(csv)) : null;
+    }
+
+    private static string Element(string xml, string name)
+    {
+        int a = xml.IndexOf($"<{name}>", StringComparison.Ordinal);
+        int b = xml.IndexOf($"</{name}>", StringComparison.Ordinal);
+        return a >= 0 && b > a ? SecurityElementUnescape(xml[(a + name.Length + 2)..b]) : "";
     }
 
     public static string? Remove()

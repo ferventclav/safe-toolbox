@@ -17,14 +17,14 @@ internal sealed class UpdatesPage : PageBase
     private readonly Dictionary<UpdateSource, SourceResult> _results = [];
     private readonly Dictionary<string, bool> _manual = [];
     private readonly Dictionary<string, List<NotesLink>> _wingetNotes = new(StringComparer.OrdinalIgnoreCase);
-    private readonly StackPanel _groupsPanel = new() { Spacing = 12, Padding = new Thickness(0, 0, 12, 16) };
+    private readonly StackPanel _groupsPanel = new() { Spacing = 12, Padding = new Thickness(0, 0, 12, 12) };
     private readonly Expander _hiddenExpander;
     private readonly StackPanel _hiddenList = new() { Spacing = 12 };
-    private readonly Grid _body = new() { Padding = new Thickness(24, 8, 24, 0) };
+    private readonly Grid _body = new() { Padding = new Thickness(16, 0, 16, 0) };
     private readonly Border _details;
     private readonly TextBlock _detailsTitle = Text("Details", "SubtitleTextBlockStyle");
     private readonly TextBlock _detailsWhy = Muted("", caption: false);
-    private readonly StackPanel _detailsList = new() { Spacing = 10, Padding = new Thickness(0, 4, 12, 4) };
+    private readonly StackPanel _detailsList = new() { Spacing = 12, Padding = new Thickness(0, 4, 12, 4) };
     private readonly TextBlock _summary = Text("Not checked yet", "SubtitleTextBlockStyle");
     private readonly TextBlock _selected = Text("");
     private readonly TextBlock _lastChecked = Muted("");
@@ -51,12 +51,20 @@ internal sealed class UpdatesPage : PageBase
 
     public bool Checking => _pendingChecks > 0;
     public bool Busy => _busy;
-    public int SafeCount => _items.Count(i => i.Selectable && !i.Hidden);
+    public int SafeCount => _items.Count(IsPending);
     public int LeftOutCount => _items.Count(i => i.Hidden);
     public DateTime? LastChecked => _settings.LastChecked;
     public DateTime? LastUpdated => _settings.LastUpdated;
-    public IEnumerable<UpdateItem> SafeItems => _items.Where(i => i.Selectable && !i.Hidden);
+    public IEnumerable<UpdateItem> SafeItems => _items.Where(IsPending);
     public Settings UpdaterSettings => _settings;
+    public bool Started => _started;
+
+    public override string? BlockingWork => _run is null
+        ? null
+        : "Updates are still installing. Anything not started yet won't run, and this run won't appear in History.";
+
+    /// <summary>An update still to install: what finished in this session no longer counts.</summary>
+    private static bool IsPending(UpdateItem i) => i.Selectable && !i.Hidden && i.Status != ItemStatus.Done;
 
     public UpdatesPage(IShell shell) : base(shell, "Updates",
         "Apps, Windows, drivers and your dev tools, checked in one place.",
@@ -94,7 +102,7 @@ internal sealed class UpdatesPage : PageBase
         Grid.SetRow(detailsScroll, 2);
         detailsGrid.Children.Add(detailsScroll);
         _details = Card(detailsGrid);
-        _details.Margin = new Thickness(0, 0, 0, 16);
+        _details.Margin = new Thickness(0, 0, 0, 12);
 
         _body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         _body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(380) });
@@ -183,7 +191,7 @@ internal sealed class UpdatesPage : PageBase
         _settings.LastChecked = DateTime.Now;
         _settings.Save();
         WorkBar.IsIndeterminate = false;
-        SetBusy(false, _items.Any(i => !i.Hidden && i.Selectable) ? "Untick anything you'd rather leave, then press Update selected." : "Nothing safe to update.");
+        SetBusy(false, SafeCount > 0 ? "Untick anything you'd rather leave, then press Update selected." : "Nothing safe to update.");
 
         List<string> warnings = Preflight.Warnings();
         if (warnings.Count > 0)
@@ -253,7 +261,7 @@ internal sealed class UpdatesPage : PageBase
         {
             string versions = i.Kind is ItemKind.Package && i.Current.Length > 0 ? $"   {i.Current}  →  {i.TargetVersion ?? i.Available}" : "";
             var head = Rich((i.DisplayName, true), (versions, false));
-            var entry = Stack(2, head, Muted($"{Checker.Title(i.Source)} · {i.Badge}"), Muted(i.Note ?? "", caption: false));
+            var entry = Stack(4, head, Muted($"{Checker.Title(i.Source)} · {i.Badge}"), Muted(i.Note ?? "", caption: false));
             if (i.IgnoredByUser)
             {
                 UpdateItem target = i;
@@ -261,14 +269,17 @@ internal sealed class UpdatesPage : PageBase
             }
             _hiddenList.Children.Add(entry);
         }
-        _hiddenExpander.Header = $"Left out for safety ({hidden.Count}). These aren't listed above, so they can't be ticked by accident.";
+        string hiddenTitle = $"Left out for safety ({hidden.Count}). These aren't listed above, so they can't be ticked by accident.";
+        _hiddenExpander.Header = hiddenTitle;
+        AutomationProperties.SetName(_hiddenExpander, hiddenTitle);
         _hiddenExpander.Visibility = hidden.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateSummary()
     {
         int n = SafeCount;
-        int sel = _items.Count(i => i.Selectable && !i.Hidden && i.Selected);
+        List<UpdateItem> ticked = _items.Where(i => i.Selectable && !i.Hidden && i.Selected).ToList();
+        int sel = ticked.Count;
         int hidden = LeftOutCount;
         _summary.Text = _pendingChecks > 0
             ? $"Checking… {Checker.Sources.Count - _pendingChecks} of {Checker.Sources.Count} done"
@@ -280,7 +291,7 @@ internal sealed class UpdatesPage : PageBase
             _updateButton.IsEnabled = !_busy && sel > 0;
             _updateButton.Content = sel > 0 ? $"Update selected ({sel})" : "Update selected";
         }
-        _adminBar.IsOpen = !_busy && _items.Any(i => i.Selectable && !i.Hidden && i.Selected && i.NeedsAdmin);
+        _adminBar.IsOpen = !_busy && ticked.Any(i => i.NeedsAdmin);
 
         var parts = new List<string>();
         if (_settings.LastChecked is DateTime c)
@@ -321,7 +332,7 @@ internal sealed class UpdatesPage : PageBase
         if (open.Count > 0)
         {
             string msg = $"{string.Join(", ", open)} {(open.Count == 1 ? "is" : "are")} running. The installer may close {(open.Count == 1 ? "it" : "them")}, so save your work first.";
-            if (await Shell.AskAsync(open.Count == 1 ? "One of these apps is open" : "Some of these apps are open", msg, "Update anyway") != ContentDialogResult.Primary)
+            if (await Shell.AskAsync(open.Count == 1 ? "One of these apps is open" : "Some of these apps are open", msg, "Update anyway", "Wait") != ContentDialogResult.Primary)
             {
                 return;
             }
@@ -350,11 +361,27 @@ internal sealed class UpdatesPage : PageBase
             RunLog.WriteError(ex.ToString());
             ShowError("The update run stopped", ex.Message);
             _run = null;
+            AutomationProperties.SetName(_updateButton, "Update selected");
             SetBusy(false, "");
             return;
         }
         _run = null;
         AutomationProperties.SetName(_updateButton, "Update selected");
+
+        // What installed is finished: untick it so a second press can't run it again. Failures stay ticked to retry.
+        foreach (UpdateItem i in selected.Where(i => i.Status == ItemStatus.Done))
+        {
+            i.Selected = false;
+            RememberChoice(i);
+            if (_groups.TryGetValue(i.Source, out GroupView? g))
+            {
+                g.Refresh(i);
+            }
+        }
+        foreach (GroupView g in _groups.Values)
+        {
+            g.Sync();
+        }
 
         _lastRunLog = summary.LogFile;
         var notes = new List<string>(summary.Notes);
@@ -443,10 +470,6 @@ internal sealed class UpdatesPage : PageBase
         _detailsTitle.Text = "Details";
         _detailsWhy.Text = "Pick an update to see what it is, why it is or isn't selected, what's new, and the exact command it runs.";
         _detailsList.Children.Clear();
-        foreach (SourceCheck s in Checker.Sources)
-        {
-            _detailsList.Children.Add(Field(Checker.Title(s.Source), Checker.Describe(s.Source)));
-        }
     }
 
     private void ShowDetails(RowView row)
@@ -522,7 +545,7 @@ internal sealed class UpdatesPage : PageBase
         {
             _detailsList.Children.Add(Field("Last lines of output", string.Join("\n", i.Output), mono: true));
         }
-        if (i.Selectable && i.Kind != ItemKind.StoreScan && !_busy)
+        if (i.Selectable && !_busy)
         {
             var skip = Ui.Button("Skip this version", (_, _) => SkipVersion(i));
             ToolTipService.SetToolTip(skip, $"Hides {i.TargetVersion ?? i.Available} only. The next version after it is listed again.");
@@ -558,7 +581,6 @@ internal sealed class UpdatesPage : PageBase
 
     private static string DefaultWhy(UpdateItem i) => i.Kind switch
     {
-        ItemKind.StoreScan => "Asks the Microsoft Store to update all your Store apps in the background.",
         ItemKind.WindowsUpdate => "An update offered by Windows Update.",
         ItemKind.Driver => "An optional driver offered by Windows Update.",
         _ when i.Recommended => "Picked: a routine update within the same version family.",
@@ -578,7 +600,7 @@ internal sealed class UpdatesPage : PageBase
         }
         _wide = wide;
         _body.ColumnDefinitions[1].Width = new GridLength(wide ? 380 : 0);
-        _body.ColumnSpacing = wide ? 16 : 0;
+        _body.ColumnSpacing = wide ? 12 : 0;
         _body.RowSpacing = wide ? 0 : 12;
         if (wide)
         {
@@ -596,6 +618,8 @@ internal sealed class UpdatesPage : PageBase
         private readonly CheckBox _all;
         private readonly TextBlock _count;
         private readonly TextBlock _status;
+        private readonly FontIcon _statusIcon;
+        private readonly Grid _statusRow;
         private readonly ProgressRing _ring;
         private readonly StackPanel _rows;
         private readonly Dictionary<string, RowView> _views = [];
@@ -610,7 +634,7 @@ internal sealed class UpdatesPage : PageBase
             _all.Click += (_, _) =>
             {
                 bool on = _all.IsChecked == true;
-                foreach (RowView v in _views.Values.Where(v => v.Item.Selectable))
+                foreach (RowView v in _views.Values.Where(v => v.Item.Selectable && v.Item.Status != ItemStatus.Done))
                 {
                     v.Item.Selected = on;
                     _owner.RememberChoice(v.Item);
@@ -625,12 +649,16 @@ internal sealed class UpdatesPage : PageBase
             _count = Text("", "BodyStrongTextBlockStyle", wrap: false);
             _count.VerticalAlignment = VerticalAlignment.Center;
             _ring = new ProgressRing { Width = 18, Height = 18, IsActive = false, Visibility = Visibility.Collapsed };
-            Grid header = Columns((_all, Px(28)), (Icon(Glyph(source), 18), Auto), (titles, Star), (Row(8, _ring, _count), Auto));
+            Grid header = Columns((_all, Px(28)), (Icon(Glyph(source), 20), Auto), (titles, Star), (Row(8, _ring, _count), Auto));
             _status = Muted("", caption: false);
-            _status.Margin = new Thickness(40, 0, 0, 0);
-            _status.Visibility = Visibility.Collapsed;
-            _rows = new StackPanel { Spacing = 2 };
-            Card = Ui.Card(Stack(8, header, _status, _rows), 0);
+            _statusIcon = Icon("\uE7BA", 16, "IconCaution");
+            _statusIcon.VerticalAlignment = VerticalAlignment.Top;
+            _statusRow = Columns((_statusIcon, Auto), (_status, Star));
+            _statusRow.ColumnSpacing = 8;
+            _statusRow.Margin = new Thickness(72, 0, 0, 0); // lines up with the source's title
+            _statusRow.Visibility = Visibility.Collapsed;
+            _rows = new StackPanel { Spacing = 4 };
+            Card = Ui.Card(Stack(8, header, _statusRow, _rows), 0);
             Card.Padding = new Thickness(16, 12, 16, 12);
         }
 
@@ -690,13 +718,13 @@ internal sealed class UpdatesPage : PageBase
             _all.IsEnabled = on;
             foreach (RowView v in _views.Values)
             {
-                v.Check.IsEnabled = on && v.Item.Selectable;
+                v.Check.IsEnabled = on && v.Item.Selectable && v.Item.Status != ItemStatus.Done;
             }
         }
 
         public void Sync()
         {
-            List<UpdateItem> sel = _views.Values.Select(v => v.Item).Where(i => i.Selectable).ToList();
+            List<UpdateItem> sel = _views.Values.Select(v => v.Item).Where(i => i.Selectable && i.Status != ItemStatus.Done).ToList();
             int on = sel.Count(i => i.Selected);
             _all.IsChecked = on == 0 ? false : on == sel.Count ? true : null;
         }
@@ -705,7 +733,8 @@ internal sealed class UpdatesPage : PageBase
         {
             _status.Text = text ?? "";
             _status.Style = S(failed ? "CautionBodyStyle" : "MutedBodyStyle");
-            _status.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
+            _statusIcon.Visibility = failed ? Visibility.Visible : Visibility.Collapsed;
+            _statusRow.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private static string Glyph(UpdateSource s) => s switch
@@ -733,9 +762,7 @@ internal sealed class UpdatesPage : PageBase
         private readonly FontIcon _statusIcon;
         private readonly ProgressRing _ring;
         private readonly TextBlock _statusText;
-        private readonly Border _root;
-        private bool _shown;
-        private bool _hover;
+        private readonly ListRow _row;
 
         public UpdateItem Item { get; }
         public ContentControl Host { get; }
@@ -759,7 +786,6 @@ internal sealed class UpdatesPage : PageBase
             string sub = item.Kind switch
             {
                 ItemKind.WindowsUpdate or ItemKind.Driver => item.Detail ?? "",
-                ItemKind.StoreScan => "Store apps update in the background",
                 _ => item.Id,
             };
             var names = Stack(0, Text(item.DisplayName, wrap: false));
@@ -773,24 +799,22 @@ internal sealed class UpdatesPage : PageBase
             _versions.VerticalAlignment = VerticalAlignment.Center;
             _versions.HorizontalAlignment = HorizontalAlignment.Right;
             _badge = Badge("");
-            _statusIcon = Icon("", 14, "IconMuted");
+            _statusIcon = Icon("", 16, "IconMuted");
             _ring = new ProgressRing { Width = 14, Height = 14, IsActive = false, Visibility = Visibility.Collapsed };
             _statusText = Text("", "MutedCaptionStyle", wrap: false);
             _statusText.VerticalAlignment = VerticalAlignment.Center;
-            var status = Row(6, _ring, _statusIcon, _statusText);
+            var status = Row(8, _ring, _statusIcon, _statusText);
             status.VerticalAlignment = VerticalAlignment.Center;
 
             Grid grid = Columns((Check, Px(28)), (names, Star), (_versions, Auto), (_badge, Auto), (status, Px(150)));
             grid.ColumnDefinitions[2].MinWidth = 150;
-            _root = new Border { Style = S("RowStyle"), Padding = new Thickness(0, 6, 8, 6), Child = grid };
-            _root.Tapped += (_, _) => _owner.ShowDetails(this);
-            _root.PointerEntered += (_, _) => { _hover = true; ApplyStyle(); };
-            _root.PointerExited += (_, _) => { _hover = false; ApplyStyle(); };
+            _row = new ListRow(grid);
+            _row.Root.Tapped += (_, _) => _owner.ShowDetails(this);
 
             // A keyboard stop for the row, so its details can be opened without a mouse.
             Host = new ContentControl
             {
-                Content = _root,
+                Content = _row.Root,
                 IsTabStop = true,
                 UseSystemFocusVisuals = true,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -807,31 +831,20 @@ internal sealed class UpdatesPage : PageBase
             Refresh();
         }
 
-        public void SetShown(bool shown)
-        {
-            _shown = shown;
-            ApplyStyle();
-        }
-
-        private void ApplyStyle()
-        {
-            Style s = S(_shown ? "SelectedRowStyle" : _hover ? "RowHoverStyle" : "RowStyle");
-            if (!ReferenceEquals(_root.Style, s))
-            {
-                _root.Style = s;
-                _root.Padding = new Thickness(0, 6, 8, 6);
-            }
-        }
+        public void SetShown(bool shown) => _row.Selected = shown;
 
         public void Refresh()
         {
             UpdateItem i = Item;
             Check.IsChecked = i.Selectable && i.Selected;
+            if (i.Status == ItemStatus.Done)
+            {
+                Check.IsEnabled = false;
+            }
             string target = i.TargetVersion ?? i.Available;
             _versions.Text = i.Kind switch
             {
                 ItemKind.WindowsUpdate or ItemKind.Driver => i.Available,
-                ItemKind.StoreScan => "",
                 _ => $"{(i.UnknownVersion || i.Current.Length == 0 ? "?" : i.Current)}  →  {target}",
             };
             string tone = i.Badge switch
@@ -867,7 +880,7 @@ internal sealed class UpdatesPage : PageBase
                 ItemStatus.Skipped => i.Result?.StartsWith("Stopped", StringComparison.Ordinal) == true ? "Not started" : "Kept back",
                 _ => "",
             };
-            ToolTipService.SetToolTip(_root, i.Result);
+            ToolTipService.SetToolTip(_row.Root, i.Result);
         }
     }
 }

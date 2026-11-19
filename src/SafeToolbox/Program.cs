@@ -70,6 +70,10 @@ public static class Program
         try
         {
             AppInstance main = AppInstance.FindOrRegisterForKey("SafeToolbox.Main");
+            if (main.IsCurrent || Environment.GetCommandLineArgs().Any(a => a.StartsWith("----AppNotificationActivated", StringComparison.Ordinal)))
+            {
+                Notifier.Initialize();
+            }
             if (main.IsCurrent)
             {
                 main.Activated += (_, a) => (Application.Current as App)?.OnRedirected(a);

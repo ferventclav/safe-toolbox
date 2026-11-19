@@ -69,12 +69,22 @@ internal static class Appearance
         _ => WindowsShowsAccent(),
     };
 
+    /// <summary>
+    /// Always a concrete theme. ElementTheme.Default would mean the theme the app started in, so after a start in
+    /// Light or Dark the "Use my Windows setting" choice would do nothing until the next launch.
+    /// </summary>
     public static ElementTheme ToElementTheme(ThemeMode t) => t switch
     {
         ThemeMode.Light => ElementTheme.Light,
         ThemeMode.Dark => ElementTheme.Dark,
-        _ => ElementTheme.Default,
+        _ => WindowsAppsAreDark() ? ElementTheme.Dark : ElementTheme.Light,
     };
+
+    private static bool WindowsAppsAreDark()
+    {
+        Color c = Ui.GetColorValue(UIColorType.Background);
+        return c.R + c.G + c.B < 384;
+    }
 
     /// <summary>Applied in the App constructor (the only place Windows allows it), so pop-ups start in the chosen theme too.</summary>
     public static void ApplyStartupTheme(Application app, ToolboxSettings s)
@@ -127,6 +137,7 @@ internal static class Appearance
     /// <summary>Windows changed its accent colour: take the new shades unless the app is neutral.</summary>
     public static void OnSystemColorsChanged(FrameworkElement root, ToolboxSettings s)
     {
+        root.RequestedTheme = ToElementTheme(s.Theme);
         s_neutral = null;
         SetShades(!UseAccent(s.Accent));
         Refresh(root);

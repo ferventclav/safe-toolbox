@@ -3,7 +3,7 @@ namespace SafeUpdater.Core;
 /// <summary>The groups shown in the window, in display order.</summary>
 public enum UpdateSource { Apps, Chocolatey, Scoop, Windows, Nvidia, Python, Node, Rust, ClaudeCode }
 
-public enum ItemKind { Package, WindowsUpdate, Driver, StoreScan, Info }
+public enum ItemKind { Package, WindowsUpdate, Driver, Info }
 
 public enum ItemStatus { Idle, Queued, Running, Done, Failed, Skipped }
 

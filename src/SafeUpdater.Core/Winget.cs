@@ -116,6 +116,32 @@ public static partial class WingetParser
         return WingetOutcome.Failed;
     }
 
+    /// <summary>
+    /// The reason to show for a failed upgrade. winget's last line is often just its progress ("Downloading ..."),
+    /// so a line that names the error wins, and a run that stopped mid-download says so.
+    /// </summary>
+    public static string FailureReason(ProcResult r)
+    {
+        if (r.TimedOut)
+        {
+            return "it ran out of time";
+        }
+        List<string> lines = r.Lines.Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        string? cause = lines.LastOrDefault(l => l.StartsWith("0x", StringComparison.OrdinalIgnoreCase) || l.Contains("failed", StringComparison.OrdinalIgnoreCase));
+        if (cause is not null)
+        {
+            return cause;
+        }
+        string? last = lines.LastOrDefault();
+        if (last is null)
+        {
+            return $"exit {r.ExitCode}";
+        }
+        return last.StartsWith("Downloading ", StringComparison.OrdinalIgnoreCase)
+            ? "the download didn't finish. Check your connection and try again"
+            : last;
+    }
+
     public static List<string> UpgradeArgs(UpdateItem item, bool force)
     {
         var args = new List<string>

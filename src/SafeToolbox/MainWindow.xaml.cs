@@ -14,6 +14,10 @@ public sealed partial class MainWindow : Window, IShell
     private readonly Dictionary<string, Func<PageBase>> _factories;
     private readonly UISettings _uiSettings = new();
     private PageBase? _current;
+    private bool _asking;
+    private bool _closeApproved;
+    // Windows can still deliver activation while the window is going away, and touching it then is a hard crash.
+    private bool _closing;
 
     public ToolboxSettings Settings { get; }
 
@@ -24,7 +28,7 @@ public sealed partial class MainWindow : Window, IShell
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
+        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Standard;
         string ico = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
         if (File.Exists(ico))
         {
@@ -80,6 +84,10 @@ public sealed partial class MainWindow : Window, IShell
         // Windows' accent switches and colours can change while the app is open; check again on every activation.
         Activated += (_, e) =>
         {
+            if (_closing)
+            {
+                return;
+            }
             bool active = e.WindowActivationState != WindowActivationState.Deactivated;
             TitleBarText.Opacity = active ? 1.0 : 0.5;
             if (active)
@@ -87,8 +95,20 @@ public sealed partial class MainWindow : Window, IShell
                 ApplyAppearance();
             }
         };
-        _uiSettings.ColorValuesChanged += (_, _) => DispatcherQueue.TryEnqueue(() => Appearance.OnSystemColorsChanged(RootGrid, Settings));
-        RootGrid.ActualThemeChanged += (_, _) => Appearance.ApplyCaptionButtons(this, RootGrid.ActualTheme);
+        _uiSettings.ColorValuesChanged += (_, _) => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!_closing)
+            {
+                Appearance.OnSystemColorsChanged(RootGrid, Settings);
+            }
+        });
+        RootGrid.ActualThemeChanged += (_, _) =>
+        {
+            if (!_closing)
+            {
+                Appearance.ApplyCaptionButtons(this, RootGrid.ActualTheme);
+            }
+        };
 
         RootGrid.Loaded += (_, _) =>
         {
@@ -100,7 +120,30 @@ public sealed partial class MainWindow : Window, IShell
             Page<CleanupPage>().EnsureStarted();
             Navigate(StartPage ?? Settings.LastPage ?? "home");
         };
-        Closed += (_, _) => Settings.Save();
+        AppWindow.Closing += OnClosing;
+        Closed += (_, _) =>
+        {
+            _closing = true;
+            Settings.Save();
+            Notifier.Shutdown();
+        };
+    }
+
+    /// <summary>Closing mid-run would drop the work still queued and the run's History entry, so it asks first.</summary>
+    private async void OnClosing(AppWindow sender, AppWindowClosingEventArgs e)
+    {
+        if (_closeApproved || _pages.Values.Select(p => p.BlockingWork).FirstOrDefault(w => w is not null) is not string work)
+        {
+            _closing = true;
+            return;
+        }
+        e.Cancel = true;
+        if (!_asking && await AskAsync("Close Safe Toolbox now?", work, "Close anyway", "Keep it open") == ContentDialogResult.Primary)
+        {
+            _closeApproved = true;
+            _closing = true;
+            Close();
+        }
     }
 
     /// <summary>Set when a notification opened the app on a specific page.</summary>
@@ -202,7 +245,15 @@ public sealed partial class MainWindow : Window, IShell
             CloseButtonText = close ?? "",
             DefaultButton = primaryIsDefault ? ContentDialogButton.Primary : ContentDialogButton.Close,
         };
-        return await dialog.ShowAsync();
+        _asking = true;
+        try
+        {
+            return await dialog.ShowAsync();
+        }
+        finally
+        {
+            _asking = false;
+        }
     }
 
     public void ShowError(string title, string message)
@@ -216,6 +267,10 @@ public sealed partial class MainWindow : Window, IShell
     /// <summary>Brings the window forward, for a second launch or a clicked notification.</summary>
     public void BringToFront(string? page)
     {
+        if (_closing)
+        {
+            return;
+        }
         if (page is not null)
         {
             Navigate(page);

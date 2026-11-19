@@ -125,7 +125,7 @@ public static class Background
         Policy.ApplyAll(items, PolicyContext.From(settings, choco, Tools.Rustup() is not null));
         summary.UpdatesChecked = true;
         summary.Updates = items
-            .Where(i => !i.Hidden && i.Selectable && i.Recommended && i.Kind != ItemKind.StoreScan)
+            .Where(i => !i.Hidden && i.Selectable && i.Recommended)
             .Select(i => new UpdateFinding { Source = Checker.Title(i.Source), Name = i.DisplayName, Current = i.Current, Available = i.TargetVersion ?? i.Available })
             .ToList();
         summary.LeftOut = items.Count(i => i.Hidden);

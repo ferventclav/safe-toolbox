@@ -168,6 +168,33 @@ public class ParserTests
     }
 
     [Fact]
+    public void Windows_update_failures_are_explained_in_words()
+    {
+        List<WindowsUpdateSource.InstallResult> r = WindowsUpdateSource.ParseInstall(
+            "[{\"id\":\"a\",\"result\":0,\"download\":2,\"hresult\":0,\"reboot\":false},"
+            + "{\"id\":\"b\",\"result\":0,\"download\":4,\"hresult\":0,\"reboot\":false},"
+            + "{\"id\":\"c\",\"result\":4,\"download\":2,\"hresult\":-2145124329,\"reboot\":false}]");
+
+        Assert.Contains("didn't start", r[0].Failure);
+        Assert.Contains("couldn't download", r[1].Failure);
+        Assert.Contains("0x80240017", r[2].Failure);
+    }
+
+    [Theory]
+    [InlineData(512.5, "up to 512.5 MB")]
+    [InlineData(92712.7, "up to 90.5 GB")]
+    public void Windows_update_sizes_use_a_readable_unit(double mb, string expected) =>
+        Assert.Equal(expected, WindowsUpdateSource.SizeText(mb));
+
+    [Theory]
+    [InlineData("Found GitHub CLI\nDownloading https://example.test/gh.msi\n", "the download didn't finish. Check your connection and try again")]
+    [InlineData("Starting package install...\nAn unexpected error occurred while executing the command:\n0x800704c7 : The operation was canceled by the user.\n", "0x800704c7 : The operation was canceled by the user.")]
+    [InlineData("Starting package install...\nInstaller failed with exit code: 1603\nmore text\n", "Installer failed with exit code: 1603")]
+    [InlineData("", "exit 1")]
+    public void A_winget_failure_names_the_real_reason(string output, string expected) =>
+        Assert.Equal(expected, WingetParser.FailureReason(new ProcResult(1, output, false)));
+
+    [Fact]
     public void Windows_update_install_script_only_takes_guids()
     {
         string script = WindowsUpdateSource.InstallScript(["1d1f9b0e-0000-4000-8000-000000000001", "'; Remove-Item C:\\ -Recurse; '"]);

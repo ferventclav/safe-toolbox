@@ -8,11 +8,11 @@ namespace SafeToolbox.Pages;
 /// <summary>Documented Windows fixes, one at a time, with every line of output kept on screen.</summary>
 internal sealed class RepairPage : PageBase
 {
-    private readonly StackPanel _list = new() { Spacing = 8, Padding = new Thickness(0, 0, 12, 16) };
+    private readonly StackPanel _list = new() { Spacing = 8, Padding = new Thickness(0, 0, 12, 12) };
     private readonly TextBlock _outputTitle = Text("Output", "SubtitleTextBlockStyle");
     private readonly TextBlock _output = new() { Style = S("MonoCaptionStyle") };
     private readonly ScrollViewer _outputScroll;
-    private readonly Grid _body = new() { Padding = new Thickness(24, 8, 24, 0) };
+    private readonly Grid _body = new() { Padding = new Thickness(16, 0, 16, 0) };
     private readonly Border _outputCard;
     private readonly List<Button> _runButtons = [];
     private bool _busy;
@@ -35,7 +35,7 @@ internal sealed class RepairPage : PageBase
         Grid.SetRow(_outputScroll, 1);
         g.Children.Add(_outputScroll);
         _outputCard = Card(g);
-        _outputCard.Margin = new Thickness(0, 0, 0, 16);
+        _outputCard.Margin = new Thickness(0, 0, 0, 12);
 
         _body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         _body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(420) });
@@ -68,16 +68,18 @@ internal sealed class RepairPage : PageBase
         {
             titleRow.Children.Add(Badge("Restart after", "caution"));
         }
-        var text = Stack(2, titleRow, Text(r.What), Muted(r.Heads));
+        var text = Stack(4, titleRow, Text(r.What), Muted(r.Heads));
         var run = new Button { Content = "Run" };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(run, "Run " + r.Title);
         run.Click += async (_, _) => await RunAsync(r);
         run.VerticalAlignment = VerticalAlignment.Center;
         _runButtons.Add(run);
         Border card = Card(Columns((Icon(r.Glyph, 20), Auto), (text, Star), (run, Auto)));
-        card.Padding = new Thickness(16, 14, 16, 14);
+        card.Padding = new Thickness(16, 12, 16, 12);
         return card;
     }
+
+    public override string? BlockingWork => _busy ? "A repair is still running, and its output would be lost." : null;
 
     private async Task RunAsync(Repair r)
     {
@@ -207,7 +209,7 @@ internal sealed class RepairPage : PageBase
         }
         _wide = wide;
         _body.ColumnDefinitions[1].Width = new GridLength(wide ? 420 : 0);
-        _body.ColumnSpacing = wide ? 16 : 0;
+        _body.ColumnSpacing = wide ? 12 : 0;
         _body.RowSpacing = wide ? 0 : 12;
         if (wide)
         {

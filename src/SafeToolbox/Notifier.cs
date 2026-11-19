@@ -13,6 +13,8 @@ namespace SafeToolbox;
 internal static class Notifier
 {
     private static bool s_registered;
+    private static bool s_initialized;
+    private static Action<string?>? s_onClick;
 
     public static bool Supported
     {
@@ -29,9 +31,14 @@ internal static class Notifier
         }
     }
 
-    /// <summary>Clicks on a notification while the window is open come here instead of starting a second copy.</summary>
-    public static void RegisterForClicks(Action<string?> onClick)
+    /// <summary>Registers with Windows. It must run before the app reads how it was activated.</summary>
+    public static void Initialize()
     {
+        if (s_initialized)
+        {
+            return;
+        }
+        s_initialized = true;
         try
         {
             if (!Supported)
@@ -39,12 +46,33 @@ internal static class Notifier
                 return;
             }
             // The handler must be attached before Register, or Windows starts a new process for each click.
-            AppNotificationManager.Default.NotificationInvoked += (_, a) => onClick(PageFrom(a.Arguments));
+            AppNotificationManager.Default.NotificationInvoked += (_, a) => s_onClick?.Invoke(PageFrom(a.Arguments));
             EnsureRegistered();
         }
         catch (Exception ex)
         {
             ToolboxPaths.WriteError("Notification registration failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>Clicks on a notification while the window is open come here instead of starting a second copy.</summary>
+    public static void RegisterForClicks(Action<string?> onClick) => s_onClick = onClick;
+
+    /// <summary>Hands clicks back to Windows on exit, so a later click starts the app again.</summary>
+    public static void Shutdown()
+    {
+        if (!s_registered)
+        {
+            return;
+        }
+        try
+        {
+            AppNotificationManager.Default.Unregister();
+            s_registered = false;
+        }
+        catch (Exception ex)
+        {
+            ToolboxPaths.WriteError("Notification shutdown failed: " + ex.Message);
         }
     }
 

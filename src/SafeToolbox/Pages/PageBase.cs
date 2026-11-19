@@ -25,11 +25,11 @@ public interface IShell
 /// </summary>
 public abstract class PageBase : UserControl
 {
-    private readonly StackPanel _bars = new() { Spacing = 8, Padding = new Thickness(24, 0, 24, 0) };
+    private readonly StackPanel _bars = new() { Spacing = 8, Padding = new Thickness(16, 0, 16, 12) };
     private readonly InfoBar _error = new() { Severity = InfoBarSeverity.Error, IsClosable = true };
     private readonly InfoBar _notice = new() { Severity = InfoBarSeverity.Informational, IsClosable = true };
     private readonly InfoBar _result = new() { Severity = InfoBarSeverity.Success, IsClosable = true };
-    private readonly Grid _footer = new() { Padding = new Thickness(24, 4, 16, 12), ColumnSpacing = 12 };
+    private readonly Grid _footer = new() { Padding = new Thickness(16, 8, 8, 8), ColumnSpacing = 12 };
     private bool _loaded;
 
     protected IShell Shell { get; }
@@ -60,8 +60,8 @@ public abstract class PageBase : UserControl
             titles.Children.Add(Ui.Muted(l, caption: false));
         }
         Grid header = Ui.Columns((titles, Ui.Star), (HeaderRight, Ui.Auto));
-        header.Padding = new Thickness(24, 20, 24, 12);
-        header.ColumnSpacing = 24;
+        header.Padding = new Thickness(16, 16, 16, 12);
+        header.ColumnSpacing = 16;
         Root.Children.Add(header);
 
         _bars.Children.Add(_error);
@@ -78,6 +78,7 @@ public abstract class PageBase : UserControl
         _footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var status = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         status.Children.Add(StatusText);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(WorkBar, "Progress");
         status.Children.Add(WorkBar);
         _footer.Children.Add(status);
         Grid.SetColumn(Commands, 1);
@@ -106,6 +107,9 @@ public abstract class PageBase : UserControl
     protected void HideFooter() => _footer.Visibility = Visibility.Collapsed;
 
     protected virtual Task OnFirstShownAsync() => Task.CompletedTask;
+
+    /// <summary>What closing the window now would interrupt, in a sentence for the dialog; null when nothing would.</summary>
+    public virtual string? BlockingWork => null;
 
     /// <summary>Called every time the page is shown, after the first time too.</summary>
     public virtual void OnShown()
@@ -181,6 +185,6 @@ public abstract class PageBase : UserControl
         Content = content,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        Padding = new Thickness(24, 8, 24, 0),
+        Padding = new Thickness(16, 0, 16, 0),
     };
 }

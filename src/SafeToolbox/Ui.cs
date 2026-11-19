@@ -30,6 +30,40 @@ internal static class Ui
         VerticalAlignment = VerticalAlignment.Center,
     };
 
+    /// <summary>A list row: 40 high, a hover fill, and the accent pill when selected. Padding never changes with state.</summary>
+    internal sealed class ListRow
+    {
+        private readonly Border _pill = new() { Style = S("RowPillStyle"), Visibility = Visibility.Collapsed };
+        private bool _hover;
+        private bool _selected;
+
+        public Border Root { get; }
+
+        public ListRow(FrameworkElement content)
+        {
+            content.Margin = new Thickness(12, 6, 12, 6);
+            var host = new Grid();
+            host.Children.Add(content);
+            host.Children.Add(_pill);
+            Root = new Border { Style = S("RowStyle"), Child = host };
+            Root.PointerEntered += (_, _) => { _hover = true; Apply(); };
+            Root.PointerExited += (_, _) => { _hover = false; Apply(); };
+        }
+
+        public bool Selected
+        {
+            get => _selected;
+            set
+            {
+                _selected = value;
+                _pill.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+                Apply();
+            }
+        }
+
+        private void Apply() => Root.Style = S(_selected ? "SelectedRowStyle" : _hover ? "RowHoverStyle" : "RowStyle");
+    }
+
     public static Border Card(UIElement child, double padding = 16) => new()
     {
         Style = S("CardStyle"),
@@ -57,11 +91,12 @@ internal static class Ui
         return p;
     }
 
-    /// <summary>A badge: "neutral", "caution", "critical" or "success".</summary>
+    /// <summary>A badge: "neutral", "caution", "critical" or "success". A status colour always comes with an icon.</summary>
     public static Border Badge(string text, string tone = "neutral")
     {
-        string t = char.ToUpperInvariant(tone[0]) + tone[1..];
-        return new Border { Style = S("Badge" + t), Child = new TextBlock { Text = text, Style = S("Badge" + t + "Text") } };
+        var badge = new Border { Child = Row(4, new FontIcon { FontSize = 12, VerticalAlignment = VerticalAlignment.Center }, new TextBlock()) };
+        SetBadge(badge, text, tone);
+        return badge;
     }
 
     public static void SetBadge(Border badge, string? text, string tone = "neutral")
@@ -69,16 +104,23 @@ internal static class Ui
         string t = char.ToUpperInvariant(tone[0]) + tone[1..];
         badge.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
         badge.Style = S("Badge" + t);
-        if (badge.Child is TextBlock tb)
+        if (badge.Child is StackPanel row && row.Children[0] is FontIcon icon && row.Children[1] is TextBlock label)
         {
-            tb.Text = text ?? "";
-            tb.Style = S("Badge" + t + "Text");
+            label.Text = text ?? "";
+            label.Style = S("Badge" + t + "Text");
+            string glyph = tone switch { "success" => "\uE73E", "caution" => "\uE7BA", "critical" => "\uE711", _ => "" };
+            icon.Visibility = glyph.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            if (glyph.Length > 0)
+            {
+                icon.Glyph = glyph;
+                icon.Style = S("Icon" + t);
+            }
         }
     }
 
     public static Button Button(string text, RoutedEventHandler click, bool accent = false, string? glyph = null)
     {
-        object content = glyph is null ? text : Row(8, Icon(glyph, 14, accent ? "IconPlain" : "IconPlain"), new TextBlock { Text = text });
+        object content = glyph is null ? text : Row(8, Icon(glyph, 16, accent ? "IconPlain" : "IconPlain"), new TextBlock { Text = text });
         var b = new Button { Content = content };
         if (accent)
         {
@@ -136,11 +178,11 @@ internal static class Ui
         {
             titles.Children.Add(Muted(sub));
         }
-        return Columns((Icon(glyph, 18), Auto), (titles, Star), (right ?? new Border(), Auto));
+        return Columns((Icon(glyph, 20), Auto), (titles, Star), (right ?? new Border(), Auto));
     }
 
     /// <summary>"label: value" lines in a details pane.</summary>
-    public static StackPanel Field(string label, string value, bool mono = false) => Stack(2,
+    public static StackPanel Field(string label, string value, bool mono = false) => Stack(4,
         Muted(label),
         new TextBlock
         {

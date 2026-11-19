@@ -295,9 +295,42 @@ public class ScheduleTests
         Assert.Contains("<StartWhenAvailable>true</StartWhenAvailable>", xml);
         Assert.Contains("<Sunday />", xml);
         Assert.Contains("<StartBoundary>2026-11-07T12:30:00</StartBoundary>", xml);
-        Assert.Contains("<Command>\"C:\\Apps\\Safe Toolbox\\SafeToolbox.exe\"</Command>", xml);
-        Assert.Contains("<Arguments>--background</Arguments>", xml);
-        System.Xml.Linq.XDocument.Parse(xml.Replace("encoding=\"UTF-16\"", ""));
+        System.Xml.Linq.XDocument doc = System.Xml.Linq.XDocument.Parse(xml.Replace("encoding=\"UTF-16\"", ""));
+        string arguments = doc.Descendants().Single(e => e.Name.LocalName == "Arguments").Value;
+        Assert.EndsWith("conhost.exe", doc.Descendants().Single(e => e.Name.LocalName == "Command").Value, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("--headless cmd.exe /d /c \"set \"__COMPAT_LAYER=RunAsInvoker\"&\"C:\\Apps\\Safe Toolbox\\SafeToolbox.exe\" --background\"", arguments);
+    }
+
+    [Fact]
+    public void A_new_task_reads_back_as_current_and_names_its_exe()
+    {
+        string xml = Schedule.BuildXml(@"C:\Apps\R&D Tools\Safe Toolbox.exe", Frequency.Daily, new DateTime(2026, 11, 6, 9, 0, 0), "S-1-5-21-1");
+        Assert.Equal((@"C:\Apps\R&D Tools\Safe Toolbox.exe", true), Schedule.ParseRegistered(xml));
+    }
+
+    [Fact]
+    public void A_task_from_an_older_version_reads_back_as_out_of_date() =>
+        Assert.Equal((@"C:\Apps\Safe Toolbox.exe", false), Schedule.ParseRegistered(
+            "<Exec><Command>\"C:\\Apps\\Safe Toolbox.exe\"</Command><Arguments>--background</Arguments></Exec>"));
+
+    [Theory]
+    [InlineData("\"PC\",\"\\Task\",\"19-11\",\"Ready\",\"Interactive\",\"18-11\",\"-2147024156\",\"me\"", unchecked((int)0x800702E4))]
+    [InlineData("\"PC\",\"\\Task\",\"19-11\",\"Ready\",\"Interactive\",\"18-11\",\"2147943140\",\"me\"", unchecked((int)0x800702E4))]
+    [InlineData("\"PC\",\"\\Task\",\"19-11\",\"Ready\",\"Interactive\",\"18-11\",\"0\",\"me\"", 0)]
+    public void The_last_result_comes_from_its_csv_column(string csv, int expected) =>
+        Assert.Equal(expected, Schedule.ParseLastResult(csv));
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(0x41301)]
+    [InlineData(0x41303)]
+    public void Normal_task_states_are_not_problems(int code) => Assert.Null(Schedule.DescribeLastResult(code));
+
+    [Fact]
+    public void A_refused_or_failed_run_is_reported()
+    {
+        Assert.Contains("admin", Schedule.DescribeLastResult(unchecked((int)0x800702E4)));
+        Assert.Contains("0x00000001", Schedule.DescribeLastResult(1));
     }
 
     [Theory]

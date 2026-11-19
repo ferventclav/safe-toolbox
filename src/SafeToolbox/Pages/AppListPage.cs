@@ -8,9 +8,9 @@ namespace SafeToolbox.Pages;
 /// <summary>Saves what is installed (winget apps, pip, npm, VS Code extensions) and restores apps with winget import.</summary>
 internal sealed class AppListPage : PageBase
 {
-    private readonly StackPanel _panel = new() { Spacing = 16, Padding = new Thickness(0, 0, 0, 24), MaxWidth = 1000, HorizontalAlignment = HorizontalAlignment.Left };
-    private readonly StackPanel _saveResult = new() { Spacing = 6 };
-    private readonly StackPanel _restoreResult = new() { Spacing = 6 };
+    private readonly StackPanel _panel = new() { Spacing = 12, Padding = new Thickness(0, 0, 0, 16), MaxWidth = 1000, HorizontalAlignment = HorizontalAlignment.Left };
+    private readonly StackPanel _saveResult = new() { Spacing = 8 };
+    private readonly StackPanel _restoreResult = new() { Spacing = 8 };
     private readonly CheckBox _versions = new() { Content = "Include the exact versions (import then installs those, not the newest)" };
     private readonly Button _save;
 
@@ -24,12 +24,12 @@ internal sealed class AppListPage : PageBase
             CardHeader("", "Save", "winget apps as winget-apps.json (the file winget import reads), plus plain lists of pip user packages, global npm packages and VS Code extensions, and a README with what to do."),
             _versions,
             _save,
-            _saveResult), 20));
+            _saveResult)));
 
         _panel.Children.Add(Card(Stack(12,
             CardHeader("", "Restore", "Pick a winget-apps.json saved here or by winget export. You see the list before anything installs."),
             Ui.Button("Pick a saved list", async (_, _) => await PickAsync()),
-            _restoreResult), 20));
+            _restoreResult)));
         SetBody(Scroller(_panel));
     }
 
@@ -59,11 +59,11 @@ internal sealed class AppListPage : PageBase
         _saveResult.Children.Add(Text("Saved to " + result.Folder, "BodyStrongTextBlockStyle", select: true));
         foreach (ExportPart p in result.Parts)
         {
-            _saveResult.Children.Add(Columns((Icon("", 14, "IconSuccess"), Auto), (Stack(0, Text($"{p.Name}: {p.Count}"), Muted(p.Note ?? Path.GetFileName(p.File))), Star)));
+            _saveResult.Children.Add(Columns((Icon("", 16, "IconSuccess"), Auto), (Stack(0, Text($"{p.Name}: {p.Count}"), Muted(p.Note ?? Path.GetFileName(p.File))), Star)));
         }
         if (result.NotInWinget.Count > 0)
         {
-            var missing = Stack(2, Text($"{Plural(result.NotInWinget.Count, "app")} winget can't reinstall", "BodyStrongTextBlockStyle"),
+            var missing = Stack(4, Text($"{Plural(result.NotInWinget.Count, "app")} winget can't reinstall", "BodyStrongTextBlockStyle"),
                 Muted("Reinstall these by hand on the new PC. The README lists them too.", caption: false));
             foreach (string m in result.NotInWinget.Take(40))
             {
@@ -98,7 +98,16 @@ internal sealed class AppListPage : PageBase
         {
             return;
         }
-        List<string> ids = AppList.WingetIds(await File.ReadAllTextAsync(file));
+        List<string> ids;
+        try
+        {
+            ids = AppList.WingetIds(await File.ReadAllTextAsync(file));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            ShowError("That file couldn't be read", ex.Message);
+            return;
+        }
         _restoreResult.Children.Clear();
         if (ids.Count == 0)
         {
@@ -114,6 +123,6 @@ internal sealed class AppListPage : PageBase
             {
                 AppList.StartImport(file);
             }
-        }, accent: true));
+        }));
     }
 }

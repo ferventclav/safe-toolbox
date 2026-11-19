@@ -148,7 +148,7 @@ public static class Worker
                     Message = "Its installer failed as admin. Trying again without admin…",
                 },
                 WingetOutcome.InUse => Fail(ji, "A file was in use. Close the app and try again.", r),
-                _ => Fail(ji, "Didn't install: " + (r.Tail(1).FirstOrDefault() ?? $"exit {r.ExitCode}"), r),
+                _ => Fail(ji, "Didn't install: " + WingetParser.FailureReason(r), r),
             });
         }
 
@@ -203,19 +203,8 @@ public static class Worker
                     ? Fail(ji, "Windows Update didn't install it (no longer offered, or the install failed).", r)
                     : res.Succeeded
                         ? Done(ji, res.Reboot ? "Installed. Restart to finish." : "Installed", r, res.Reboot)
-                        : Fail(ji, $"Windows Update reported result code {res.ResultCode}", r));
+                        : Fail(ji, res.Failure, r));
             }
-        }
-
-        JobItem? store = job.Items.FirstOrDefault(i => i.Kind == ItemKind.StoreScan);
-        if (store is not null && !Stopped(store))
-        {
-            Emit(new ProgressEvent { Key = store.Key, Status = ItemStatus.Running, Message = "Asking the Store…" });
-            ProcResult r = await ProcessRunner.PowerShellAsync(WindowsUpdateSource.StoreScanScript, TimeSpan.FromMinutes(5));
-            RunLog.Append(job.LogFile, "=== Microsoft Store scan\n" + r.Output);
-            Emit(r.Output.Contains("ReturnValue=0")
-                ? Done(store, "The Store is updating your apps in the background", r)
-                : Fail(store, "The Store didn't accept the request", r));
         }
 
         if (job.Path is not null && sameUser)

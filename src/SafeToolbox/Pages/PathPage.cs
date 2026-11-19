@@ -11,7 +11,7 @@ namespace SafeToolbox.Pages;
 /// </summary>
 internal sealed class PathPage : PageBase
 {
-    private readonly StackPanel _panel = new() { Spacing = 16, Padding = new Thickness(0, 0, 0, 24) };
+    private readonly StackPanel _panel = new() { Spacing = 12, Padding = new Thickness(0, 0, 0, 16) };
     private readonly TextBlock _summary = Text("", "SubtitleTextBlockStyle", wrap: false);
     private readonly TextBlock _summarySub = Muted("");
     private readonly Button _fix;
@@ -58,7 +58,7 @@ internal sealed class PathPage : PageBase
         _fix.Content = fixable > 0 ? $"Fix my user PATH ({fixable})" : "Fix my user PATH";
 
         // problems
-        var pb = Stack(10);
+        var pb = Stack(12);
         if (problems.Count == 0)
         {
             pb.Children.Add(Row(8, Icon("", 16, "IconSuccess"), Text("Every entry points to a folder that exists, and none repeats.")));
@@ -73,7 +73,7 @@ internal sealed class PathPage : PageBase
                 PathProblem.NotAFolder => "Points to a file, not a folder",
                 _ => "",
             };
-            var lines = Stack(2, Text(e.Raw.Length > 0 ? e.Raw : "(empty)", "BodyStrongTextBlockStyle", select: true), Muted(what));
+            var lines = Stack(4, Text(e.Raw.Length > 0 ? e.Raw : "(empty)", "BodyStrongTextBlockStyle", select: true), Muted(what));
             if (e.Raw != e.Expanded && e.Expanded.Length > 0)
             {
                 lines.Children.Add(Text(e.Expanded, "MutedCaptionStyle", select: true));
@@ -87,10 +87,10 @@ internal sealed class PathPage : PageBase
         _panel.Children.Add(Section("", "Problems", "Missing folders slow down every command lookup a little; repeats just add noise.", pb));
 
         // commands
-        var cb = Stack(10);
+        var cb = Stack(12);
         foreach (CommandHit h in PathDoctor.Commands(_entries))
         {
-            var lines = Stack(2, Text(h.Command, "BodyStrongTextBlockStyle"), Text("Runs " + h.Runs, "MutedCaptionStyle", select: true));
+            var lines = Stack(4, Text(h.Command, "BodyStrongTextBlockStyle"), Text("Runs " + h.Runs, "MutedCaptionStyle", select: true));
             if (PathDoctor.IsStoreAlias(h.Runs) && h.Command is "python" or "python3")
             {
                 lines.Children.Add(Text("This is Windows' shortcut that opens the Microsoft Store, not a real Python. Turn it off in Settings, Apps, Advanced app settings, App execution aliases.", "CautionCaptionStyle"));
@@ -109,14 +109,14 @@ internal sealed class PathPage : PageBase
 
         // broken links
         List<BrokenLink> broken = PathDoctor.BrokenWingetLinks();
-        var lb = Stack(10);
+        var lb = Stack(12);
         if (broken.Count == 0)
         {
             lb.Children.Add(Row(8, Icon("", 16, "IconSuccess"), Text("Every command link winget made still points to its program.")));
         }
         foreach (BrokenLink b in broken)
         {
-            lb.Children.Add(Stack(2, Text(Path.GetFileName(b.Link), "BodyStrongTextBlockStyle"), Text("Points to " + b.Target + ", which is gone.", "MutedCaptionStyle", select: true),
+            lb.Children.Add(Stack(4, Text(Path.GetFileName(b.Link), "BodyStrongTextBlockStyle"), Text("Points to " + b.Target + ", which is gone.", "MutedCaptionStyle", select: true),
                 Muted("Reinstall the package with winget (winget install --id <id> --force) to bring the link back.")));
         }
         _panel.Children.Add(Section("", "winget command links", "Links in WinGet\\Links that make tools like ffmpeg runnable from any terminal.", lb));
@@ -127,13 +127,15 @@ internal sealed class PathPage : PageBase
         {
             all.Children.Add(Columns((Muted(e.Scope == PathScope.User ? "User" : "System"), Px(56)), (Text(e.Expanded, e.Problem == PathProblem.None ? "MutedCaptionStyle" : "CautionCaptionStyle", select: true), Star)));
         }
-        _panel.Children.Add(new Expander
+        var every = new Expander
         {
             Header = "Every PATH entry, in the order Windows searches them",
             Content = all,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
-        });
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(every, "Every PATH entry, in the order Windows searches them");
+        _panel.Children.Add(every);
         StatusText.Text = PathDoctor.LatestBackup() is string bk ? $"Last fix saved the old PATH to {Path.GetFileName(bk)}." : "";
     }
 
@@ -145,7 +147,7 @@ internal sealed class PathPage : PageBase
             return;
         }
         string list = string.Join("\n", fix.Select(x => "• " + (x.Raw.Length > 0 ? x.Raw : "(empty)")));
-        if (await Shell.AskAsync("Remove these from your user PATH?", list + "\n\nThe old PATH is saved first, and Undo the last fix puts it back. Open terminals keep the old PATH until you reopen them.", "Remove") != ContentDialogResult.Primary)
+        if (await Shell.AskAsync("Remove these from your user PATH?", list + "\n\nThe old PATH is saved first, and Undo the last fix puts it back. Open terminals keep the old PATH until you reopen them.", "Remove", "Keep them") != ContentDialogResult.Primary)
         {
             return;
         }
@@ -186,5 +188,5 @@ internal sealed class PathPage : PageBase
     }
 
     private static Border Section(string glyph, string title, string sub, UIElement body) =>
-        Card(Stack(12, CardHeader(glyph, title, sub), body), 20);
+        Card(Stack(12, CardHeader(glyph, title, sub), body));
 }

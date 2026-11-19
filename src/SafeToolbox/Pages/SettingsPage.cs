@@ -10,7 +10,11 @@ internal sealed class SettingsPage : PageBase
 {
     private readonly TextBlock _accentNote = Muted("");
     private readonly TextBlock _taskStatus = Muted("");
-    private readonly StackPanel _panel = new() { Spacing = 4, Padding = new Thickness(0, 0, 0, 24), MaxWidth = 1000, HorizontalAlignment = HorizontalAlignment.Left };
+    private readonly TextBlock _taskProblem = Text("", "CautionCaptionStyle");
+    private readonly TextBlock _hiddenCount = Muted("");
+    private readonly TextBlock _ticksCount = Muted("");
+    private readonly Button _runNow;
+    private readonly StackPanel _panel = new() { Spacing = 4, Padding = new Thickness(0, 0, 0, 16), MaxWidth = 1000, HorizontalAlignment = HorizontalAlignment.Left };
     private bool _loading = true;
 
     public SettingsPage(IShell shell) : base(shell, "Settings", "How Safe Toolbox looks, and what it checks by itself.")
@@ -27,7 +31,7 @@ internal sealed class SettingsPage : PageBase
             Combo(["Mica Alt", "Mica", "Solid"], (int)s.Backdrop, i => { s.Backdrop = (BackdropMode)i; Changed(); })));
 
         Section("When Safe Toolbox opens");
-        _panel.Children.Add(SettingRow("", "Check for updates", "Starts the update check as soon as the window opens, as Safe Updater did.",
+        _panel.Children.Add(SettingRow("", "Check for updates", "Starts the update check as soon as the window opens.",
             Switch(s.CheckUpdatesOnOpen, on => { s.CheckUpdatesOnOpen = on; s.Save(); })));
 
         Section("Background checks");
@@ -49,9 +53,10 @@ internal sealed class SettingsPage : PageBase
                    : "Windows didn't accept it. Background checks still save their result, and the Home page shows it.",
                 ok ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
         });
-        var runNow = Ui.Button("Check now in the background", async (_, _) => await RunBackgroundNowAsync());
-        var taskRow = Stack(6, _taskStatus, Row(8, test, runNow));
-        taskRow.Margin = new Thickness(0, 4, 0, 8);
+        _runNow = Ui.Button("Check now in the background", async (_, _) => await RunBackgroundNowAsync());
+        _taskProblem.Visibility = Visibility.Collapsed;
+        var taskRow = Stack(8, _taskStatus, _taskProblem, Row(8, test, _runNow));
+        taskRow.Margin = new Thickness(0, 8, 0, 0);
         _panel.Children.Add(taskRow);
 
         Section("Updates");
@@ -60,31 +65,32 @@ internal sealed class SettingsPage : PageBase
             Switch(us.RestorePoint, on => { us.RestorePoint = on; us.Save(); })));
         _panel.Children.Add(SettingRow("", "Test my tools after a Python update", "Runs the tool check before and after; a check that passed before and fails after rolls the update back.",
             Switch(us.TestAfterUpdate, on => { us.TestAfterUpdate = on; us.Save(); })));
-        int hidden = us.Ignored.Count + us.Skipped.Count;
-        _panel.Children.Add(SettingRow("", "Hidden and skipped updates", $"{Plural(hidden, "update")} hidden by you. Each one can also be shown again from the Updates page.",
+        _panel.Children.Add(SettingRow("", "Hidden and skipped updates", "Each one can also be shown again from the Updates page.",
             Ui.Button("Show them all again", (_, _) =>
             {
                 us.Ignored.Clear();
                 us.Skipped.Clear();
                 us.Save();
                 ShowNotice("Done", "Every hidden or skipped update is listed again after the next check.");
-            })));
+                OnShown();
+            }), _hiddenCount));
 
         Section("Clean up");
         _panel.Children.Add(SettingRow("", "Remember my ticks", "Keeps the rows you tick or untick for the next scan.",
             Switch(s.RememberCleanupTicks, on => { s.RememberCleanupTicks = on; s.Save(); })));
-        _panel.Children.Add(SettingRow("", "Forget my ticks", $"{Plural(s.CleanupChoices.Count, "row")} differ from the defaults now.",
+        _panel.Children.Add(SettingRow("", "Forget my ticks", "Goes back to what each scan ticks by default.",
             Ui.Button("Reset to defaults", (_, _) =>
             {
                 s.CleanupChoices.Clear();
                 s.Save();
                 ShowNotice("Done", "Rescan the Clean up page to see the default ticks.");
-            })));
+                OnShown();
+            }), _ticksCount));
 
         Section("About");
-        var about = Stack(6,
+        var about = Stack(8,
             Text($"Safe Toolbox {typeof(App).Assembly.GetName().Version?.ToString(3)}", "BodyStrongTextBlockStyle"),
-            Muted("Safe Updater and Safe Disk Cleaner in one app, plus health checks, repairs, a PATH doctor, a big-files view and an app-list backup.", caption: false),
+            Muted("Updates and cleanup in one app, plus health checks, repairs, a PATH doctor, a big-files view and an app-list backup.", caption: false),
             Muted("What it never does: install or delete anything in the background, change Windows' services or privacy settings, clean the registry, or touch your documents without you asking for that file.", caption: false),
             Row(8,
                 Ui.Button("Open the settings folder", (_, _) => Open(ToolboxPaths.Root)),
@@ -103,6 +109,9 @@ internal sealed class SettingsPage : PageBase
             ? "Windows shows the accent colour on title bars and window borders"
             : "Windows is set not to show the accent colour on title bars and window borders")
             + (Shell.Settings.Accent == AccentMode.FollowWindows ? $", so Safe Toolbox {(windows ? "uses it" : "uses neutral greys")}." : ".");
+        SafeUpdater.Core.Settings us = Shell.Page<UpdatesPage>().UpdaterSettings;
+        _hiddenCount.Text = $"{Plural(us.Ignored.Count + us.Skipped.Count, "update")} hidden by you.";
+        _ticksCount.Text = $"{Plural(Shell.Settings.CleanupChoices.Count, "row")} differ from the defaults.";
         RefreshTaskStatus();
     }
 
@@ -144,14 +153,31 @@ internal sealed class SettingsPage : PageBase
             : exists
                 ? $"On: the task \"{Schedule.TaskName}\" runs {(f == Frequency.Daily ? "every day" : "every Sunday")} around 12:30, or at the next chance if the PC was off. {lastText}"
                 : "The task is missing. Change a setting above to create it again.";
+        string? problem = f is not null && exists ? Schedule.LastProblem() : null;
+        _taskProblem.Text = problem ?? "";
+        _taskProblem.Visibility = problem is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private async Task RunBackgroundNowAsync()
     {
-        StatusText.Text = "Checking…";
+        _runNow.IsEnabled = false;
         ShowNotice("Checking in the background", "This takes up to a minute. The Home page shows what it found.");
         ToolboxSettings s = Shell.Settings;
-        CheckSummary summary = await Task.Run(() => SafeToolbox.Core.Background.RunAsync(updates: true, cleanup: true, s));
+        CheckSummary summary;
+        try
+        {
+            summary = await Task.Run(() => SafeToolbox.Core.Background.RunAsync(updates: true, cleanup: true, s));
+        }
+        catch (Exception ex)
+        {
+            ToolboxPaths.WriteError("Background check failed: " + ex);
+            ShowError("The check didn't finish", ex.Message);
+            return;
+        }
+        finally
+        {
+            _runNow.IsEnabled = true;
+        }
         if (SafeToolbox.Core.Background.Notification(summary, s, true, true) is (string title, string body))
         {
             Notifier.Show(title, body, summary.Updates.Count > 0 ? "updates" : "cleanup");
@@ -169,7 +195,7 @@ internal sealed class SettingsPage : PageBase
     private void Section(string title)
     {
         var t = Text(title, "BodyStrongTextBlockStyle");
-        t.Margin = new Thickness(0, _panel.Children.Count == 0 ? 0 : 20, 0, 4);
+        t.Margin = new Thickness(0, _panel.Children.Count == 0 ? 0 : 24, 0, 4);
         _panel.Children.Add(t);
     }
 
@@ -183,9 +209,11 @@ internal sealed class SettingsPage : PageBase
         text.VerticalAlignment = VerticalAlignment.Center;
         control.VerticalAlignment = VerticalAlignment.Center;
         AutomationProperties.SetName(control, title);
-        Border card = Card(Columns((Icon(glyph, 18), Auto), (text, Star), (control, Auto)));
-        card.Padding = new Thickness(16, 14, 16, 14);
-        card.Margin = new Thickness(0, 0, 0, 2);
+        Grid row = Columns((Icon(glyph, 20), Auto), (text, Star), (control, Auto));
+        row.ColumnSpacing = 16;
+        Border card = Card(row);
+        card.Padding = new Thickness(16, 11, 16, 11);
+        card.MinHeight = 48;
         return card;
     }
 

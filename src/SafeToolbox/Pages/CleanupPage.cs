@@ -16,18 +16,18 @@ internal sealed class CleanupPage : PageBase
 
     private readonly bool _admin = Tools.IsAdmin();
     private readonly Dictionary<string, bool> _checked = new(StringComparer.Ordinal);
-    private readonly Dictionary<Rule, (Border Container, CheckBox Box)> _rows = [];
+    private readonly Dictionary<Rule, (ListRow Row, CheckBox Box)> _rows = [];
     private readonly Dictionary<RuleGroup, CheckBox> _groupBoxes = [];
-    private readonly StackPanel _groupsPanel = new() { Spacing = 12, Padding = new Thickness(0, 0, 12, 16) };
+    private readonly StackPanel _groupsPanel = new() { Spacing = 12, Padding = new Thickness(0, 0, 12, 12) };
     private readonly StackPanel _scanning = new() { Spacing = 12, Width = 360, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
     private readonly TextBlock _scanningText = Text("Scanning…", "BodyStrongTextBlockStyle", wrap: false);
     private readonly ProgressBar _scanBar = new() { Minimum = 0, Maximum = 1 };
     private readonly ScrollViewer _list;
-    private readonly Grid _body = new() { Padding = new Thickness(24, 8, 24, 0) };
+    private readonly Grid _body = new() { Padding = new Thickness(16, 0, 16, 0) };
     private readonly Border _details;
     private readonly TextBlock _detailsTitle = Text("Details", "SubtitleTextBlockStyle");
     private readonly TextBlock _detailsWhy = Muted("", caption: false);
-    private readonly StackPanel _detailsList = new() { Spacing = 6, Padding = new Thickness(0, 4, 12, 4) };
+    private readonly StackPanel _detailsList = new() { Spacing = 8, Padding = new Thickness(0, 4, 12, 4) };
     private readonly TextBlock _driveText = Text("", wrap: false);
     private readonly ProgressBar _driveBar = new() { Minimum = 0, Maximum = 100 };
     private readonly TextBlock _lastCleaned = Muted("");
@@ -49,12 +49,15 @@ internal sealed class CleanupPage : PageBase
     public long Found => _scan?.Rules.Where(r => r.CanClean).Sum(r => r.Total) ?? 0;
     public bool Scanned => _scan is not null;
 
+    public override string? BlockingWork => _stop is null ? null : "Cleaning is still running and would stop partway, without a History entry.";
+
     public CleanupPage(IShell shell) : base(shell, "Clean up",
         "Covers what Windows Disk Cleanup does, plus app caches it never sees.",
         "Installed tools, models and your files are never touched.")
     {
         var drive = Columns((Text(KnownPaths.SystemDrive.TrimEnd('\\'), "BodyStrongTextBlockStyle", wrap: false), Star), (_driveText, Auto));
         HeaderRight.Children.Add(drive);
+        AutomationProperties.SetName(_driveBar, "System drive space used");
         HeaderRight.Children.Add(_driveBar);
         HeaderRight.Children.Add(_lastCleaned);
         HeaderRight.Width = 300;
@@ -77,7 +80,7 @@ internal sealed class CleanupPage : PageBase
         Grid.SetRow(ds, 2);
         detailsGrid.Children.Add(ds);
         _details = Card(detailsGrid);
-        _details.Margin = new Thickness(0, 0, 0, 16);
+        _details.Margin = new Thickness(0, 0, 0, 12);
 
         _body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         _body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(380) });
@@ -304,7 +307,7 @@ internal sealed class CleanupPage : PageBase
         {
             text += "\n\nWindows' own Disk Cleanup runs too and can take 10+ minutes.";
         }
-        if (await Shell.AskAsync("Clean selected?", text, "Delete") != ContentDialogResult.Primary)
+        if (await Shell.AskAsync("Clean selected?", text, "Delete", "Keep these files") != ContentDialogResult.Primary)
         {
             return;
         }
@@ -467,7 +470,7 @@ internal sealed class CleanupPage : PageBase
         Grid header = Columns((box, Auto), (Icon(GroupGlyph(g), 20), Auto), (text, Star), (right, Auto));
         header.Padding = new Thickness(0, 10, 0, 10);
 
-        var rowsPanel = new StackPanel { Spacing = 2 };
+        var rowsPanel = new StackPanel { Spacing = 4 };
         foreach (Rule r in rules)
         {
             rowsPanel.Children.Add(BuildRow(r));
@@ -520,11 +523,11 @@ internal sealed class CleanupPage : PageBase
         size.TextAlignment = TextAlignment.Right;
         size.MinWidth = 72;
 
-        var container = new Border { Child = Columns((box, Auto), (lines, Star), (size, Auto)), Style = S(r.Id == _selectedId ? "SelectedRowStyle" : "RowStyle") };
-        container.Tapped += (_, _) => Select(r);
+        var row = new ListRow(Columns((box, Auto), (lines, Star), (size, Auto))) { Selected = r.Id == _selectedId };
+        row.Root.Tapped += (_, _) => Select(r);
         var host = new ContentControl
         {
-            Content = container,
+            Content = row.Root,
             IsTabStop = !can,
             UseSystemFocusVisuals = true,
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -532,7 +535,7 @@ internal sealed class CleanupPage : PageBase
         };
         AutomationProperties.SetName(host, $"{r.Title}, {description}");
         host.GotFocus += (_, _) => Select(r);
-        _rows[r] = (container, box);
+        _rows[r] = (row, box);
         return host;
     }
 
@@ -544,10 +547,10 @@ internal sealed class CleanupPage : PageBase
         text.VerticalAlignment = VerticalAlignment.Center;
         Grid header = Columns((Icon("\uEA18", 20), Auto), (text, Star));
         header.Padding = new Thickness(0, 10, 0, 10);
-        var rows = new StackPanel { Spacing = 10, Padding = new Thickness(12, 4, 12, 4) };
+        var rows = new StackPanel { Spacing = 12, Padding = new Thickness(12, 4, 12, 4) };
         foreach (Kept.Entry k in Kept.List)
         {
-            rows.Children.Add(Columns((Icon("\uE72E", 14), Auto), (Stack(0, Text(k.What), Muted(k.Why)), Star)));
+            rows.Children.Add(Columns((Icon("\uE72E", 16), Auto), (Stack(0, Text(k.What), Muted(k.Why)), Star)));
         }
         var expander = new Expander { Header = header, Content = rows, IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetName(expander, "Kept on purpose");
@@ -613,7 +616,7 @@ internal sealed class CleanupPage : PageBase
         _selectedId = r.Id;
         foreach ((Rule rule, var v) in _rows)
         {
-            v.Container.Style = S(rule.Id == r.Id ? "SelectedRowStyle" : "RowStyle");
+            v.Row.Selected = rule.Id == r.Id;
         }
         ShowDetails(r);
     }
@@ -712,7 +715,7 @@ internal sealed class CleanupPage : PageBase
         }
         _wide = wide;
         _body.ColumnDefinitions[1].Width = new GridLength(wide ? 380 : 0);
-        _body.ColumnSpacing = wide ? 16 : 0;
+        _body.ColumnSpacing = wide ? 12 : 0;
         _body.RowSpacing = wide ? 0 : 12;
         if (wide)
         {

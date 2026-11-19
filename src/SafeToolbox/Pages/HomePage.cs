@@ -8,40 +8,46 @@ namespace SafeToolbox.Pages;
 /// <summary>Your PC at a glance. Each card says what matters now and opens its tool.</summary>
 internal sealed class HomePage : PageBase
 {
-    private readonly Grid _grid = new() { ColumnSpacing = 16, RowSpacing = 16, Padding = new Thickness(0, 0, 0, 24) };
+    private readonly Grid _grid = new() { ColumnSpacing = 12, RowSpacing = 12, Padding = new Thickness(0, 0, 0, 16) };
     private readonly List<Border> _cards = [];
     private readonly TextBlock _updNumber = Text("Checking…", "BigNumberStyle", wrap: false);
     private readonly TextBlock _updSub = Muted("", caption: false);
-    private readonly StackPanel _updList = new() { Spacing = 2 };
+    private readonly StackPanel _updList = new() { Spacing = 4 };
     private readonly TextBlock _cleanNumber = Text("Scanning…", "BigNumberStyle", wrap: false);
     private readonly TextBlock _cleanSub = Muted("", caption: false);
     private readonly ProgressBar _drive = new() { Minimum = 0, Maximum = 100 };
     private readonly TextBlock _driveText = Muted("");
-    private readonly StackPanel _health = new() { Spacing = 6 };
+    private readonly StackPanel _health = new() { Spacing = 8 };
     private readonly TextBlock _bgStatus = Muted("", caption: false);
+    private readonly Grid _bgProblem;
+    private readonly TextBlock _bgProblemText = Text("", "CautionBodyStyle");
     private readonly StackPanel _recent = new() { Spacing = 8 };
     private int _columns = -1;
 
     public HomePage(IShell shell) : base(shell, "Home", "Your PC at a glance. Each card opens its tool.")
     {
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_drive, "System drive space used");
         HideFooter();
+        _bgProblem = Columns((Icon("\uE7BA", 16, "IconCaution"), Auto), (_bgProblemText, Star));
+        _bgProblem.ColumnSpacing = 8;
+        _bgProblem.Visibility = Visibility.Collapsed;
         AddCard(CardHeader("", "Updates", "Apps, Windows, drivers and dev tools"),
-            Stack(6, _updNumber, _updSub, _updList),
+            Stack(8, _updNumber, _updSub, _updList),
             Ui.Button("Review updates", (_, _) => Shell.Navigate("updates")));
         AddCard(CardHeader("", "Clean up", "Caches and leftovers, checked by the guard"),
-            Stack(6, _cleanNumber, _cleanSub, _drive, _driveText),
+            Stack(8, _cleanNumber, _cleanSub, _drive, _driveText),
             Ui.Button("Clean up", (_, _) => Shell.Navigate("cleanup")));
         AddCard(CardHeader("", "Health", "Crashes, drive, battery and security"),
             _health,
             Ui.Button("Open Health", (_, _) => Shell.Navigate("health")));
         AddCard(CardHeader("", "Background checks", "Notifications when something needs you"),
-            _bgStatus,
+            Stack(8, _bgStatus, _bgProblem),
             Ui.Button("Change in Settings", (_, _) => Shell.Navigate("settings")));
         AddCard(CardHeader("", "Recent activity", "Every update run and clean, from the logs"),
             _recent,
             Ui.Button("Open History", (_, _) => Shell.Navigate("history")));
         AddCard(CardHeader("", "More tools", null),
-            Stack(10,
+            Stack(12,
                 Tool("Big files", "Your largest files, to decide what to keep.", "storage"),
                 Tool("Repair", "Windows file repair, network reset, DNS flush, Explorer restart.", "repair"),
                 Tool("PATH doctor", "Dead or repeated PATH entries and which python or node runs.", "path"),
@@ -63,6 +69,14 @@ internal sealed class HomePage : PageBase
         RefreshBackground();
         RefreshRecent();
         _ = RefreshHealthAsync();
+        _ = RefreshBackgroundProblemAsync();
+    }
+
+    private async Task RefreshBackgroundProblemAsync()
+    {
+        string? problem = Schedule.TaskFrequency(Shell.Settings) is null ? null : await Task.Run(Schedule.LastProblem);
+        _bgProblemText.Text = problem ?? "";
+        _bgProblem.Visibility = problem is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void AddCard(UIElement header, UIElement body, Button? action)
@@ -73,7 +87,7 @@ internal sealed class HomePage : PageBase
             action.HorizontalAlignment = HorizontalAlignment.Left;
             content.Children.Add(action);
         }
-        Border card = Card(content, 20);
+        Border card = Card(content);
         _cards.Add(card);
         _grid.Children.Add(card);
     }
@@ -87,7 +101,7 @@ internal sealed class HomePage : PageBase
 
     private void Layout(double width)
     {
-        int cols = width >= 1100 ? 3 : width >= 720 ? 2 : 1;
+        int cols = width >= 1000 ? 3 : width >= 640 ? 2 : 1;
         if (cols == _columns)
         {
             return;
@@ -122,11 +136,18 @@ internal sealed class HomePage : PageBase
             return;
         }
         int n = u.SafeCount;
-        CheckSummary? bg = CheckSummary.Load();
-        if (u.LastChecked is null && bg?.UpdatesChecked != true)
+        if (!u.Started)
         {
-            _updNumber.Text = "Not checked yet";
-            _updSub.Text = "Open Updates to check.";
+            // This window hasn't checked, so only a saved background result can say anything.
+            CheckSummary? bg = CheckSummary.Load();
+            if (bg?.UpdatesChecked != true || bg.UpdatesWhen is not DateTime when)
+            {
+                _updNumber.Text = "Not checked yet";
+                _updSub.Text = "Open Updates to check.";
+                return;
+            }
+            _updNumber.Text = bg.Updates.Count == 0 ? "Up to date" : Plural(bg.Updates.Count, "safe update");
+            _updSub.Text = $"From the background check {Ago(when)}";
             return;
         }
         _updNumber.Text = n == 0 ? "Up to date" : $"{n} safe update{(n == 1 ? "" : "s")}";
@@ -157,6 +178,7 @@ internal sealed class HomePage : PageBase
         if (SafeDiskCleaner.Core.Tools.SystemDriveUsage() is (long total, long free) && total > 0)
         {
             _drive.Value = 100.0 * (total - free) / total;
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_drive, $"System drive: {_drive.Value:0} percent used");
             _driveText.Text = $"C: {SafeDiskCleaner.Core.SizeFormat.FormatGb(free)} free of {SafeDiskCleaner.Core.SizeFormat.FormatGb(total)}";
         }
     }
@@ -167,7 +189,18 @@ internal sealed class HomePage : PageBase
         {
             _health.Children.Add(Muted("Reading…", caption: false));
         }
-        HealthSnapshot h = await Shell.Page<HealthPage>().GetSnapshotAsync();
+        HealthSnapshot h;
+        try
+        {
+            h = await Shell.Page<HealthPage>().GetSnapshotAsync();
+        }
+        catch (Exception ex)
+        {
+            ToolboxPaths.WriteError("Health read failed: " + ex);
+            _health.Children.Clear();
+            _health.Children.Add(Muted("Windows' records couldn't be read. Open Health to try again.", caption: false));
+            return;
+        }
         _health.Children.Clear();
         int crashes = h.Crashes.Count(c => c.When >= DateTime.Now.AddDays(-30));
         _health.Children.Add(Line(crashes == 0 ? "" : "", crashes == 0 ? "IconSuccess" : "IconCaution",
@@ -190,7 +223,7 @@ internal sealed class HomePage : PageBase
         }
     }
 
-    private static UIElement Line(string glyph, string style, string text) => Row(8, Icon(glyph, 14, style), Text(text, wrap: false));
+    private static UIElement Line(string glyph, string style, string text) => Row(8, Icon(glyph, 16, style), Text(text, wrap: false));
 
     private void RefreshBackground()
     {
@@ -221,7 +254,7 @@ internal sealed class HomePage : PageBase
         foreach (HistoryRun r in runs)
         {
             _recent.Children.Add(Columns(
-                (Icon(r.Kind == RunKind.Updates ? "" : "", 14, r.Problems > 0 ? "IconCaution" : "IconMuted"), Auto),
+                (Icon(r.Kind == RunKind.Updates ? "" : "", 16, r.Problems > 0 ? "IconCaution" : "IconMuted"), Auto),
                 (Stack(0, Text(r.Summary, wrap: false), Muted(Ago(r.When))), Star)));
         }
     }

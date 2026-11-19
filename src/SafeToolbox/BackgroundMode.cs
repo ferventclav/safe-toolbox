@@ -27,6 +27,7 @@ internal static class BackgroundMode
                     summary.NotifiedUpdates = summary.UpdatesKey;
                     summary.Save();
                 }
+                Notifier.Shutdown();
             }
             if (json)
             {
