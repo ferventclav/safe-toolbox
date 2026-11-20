@@ -187,6 +187,11 @@ pub fn run(job: &WorkerJob) {
                 output: Some(r.tail(12)),
                 ..ProgressEvent::keyed(&ji.key, ItemStatus::Queued, "Its installer failed as admin. Trying again without admin…")
             },
+            WingetOutcome::UserScope => ProgressEvent {
+                retry_locally: true,
+                output: Some(r.tail(12)),
+                ..ProgressEvent::keyed(&ji.key, ItemStatus::Queued, "Installed for your account only, so it updates as you next…")
+            },
             WingetOutcome::InUse => fail(ji, "A file was in use. Close the app and try again.", &r),
             _ => fail(ji, format!("Didn't install: {}", winget::failure_reason(&r)), &r),
         });

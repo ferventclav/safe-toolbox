@@ -263,17 +263,19 @@ impl<'a> UpdateRun<'a> {
     fn retry_locally(&self, item: &mut UpdateItem) {
         self.set(item, ItemStatus::Running, Some("Installing as you…"));
         self.log(&format!("=== {} [{}] (as the user)", item.name, item.id));
-        let r = proc::run_simple(&tools::winget(), winget::upgrade_args(item, false), minutes(45));
+        // The window itself may be elevated (a "run as administrator" setting on the exe), so this borrows
+        // Explorer's token to really run as the user.
+        let r = proc::run_as_user(&tools::winget(), &winget::upgrade_args(item, false), minutes(45));
         self.log(&format!("{}exit {}", r.output, r.exit_code));
         keep(item, &r);
         let o = winget::classify(r.exit_code, &r.output, false);
         item.reboot_needed |= o == WingetOutcome::OkReboot;
         let (status, msg) = match o {
-            WingetOutcome::Ok | WingetOutcome::OkReboot => (ItemStatus::Done, "Updated (as you, without admin)"),
-            WingetOutcome::AlreadyCurrent => (ItemStatus::Done, "Already up to date"),
-            _ => (ItemStatus::Failed, "Its installer failed with and without admin. It may update itself when you open it."),
+            WingetOutcome::Ok | WingetOutcome::OkReboot => (ItemStatus::Done, "Updated (as you, without admin)".to_string()),
+            WingetOutcome::AlreadyCurrent => (ItemStatus::Done, "Already up to date".to_string()),
+            _ => (ItemStatus::Failed, format!("Didn't install as you either: {}", winget::failure_reason(&r))),
         };
-        self.set(item, status, Some(msg));
+        self.set(item, status, Some(msg.as_str()));
     }
 
     fn run_scoop(&self, item: &mut UpdateItem) {

@@ -180,6 +180,94 @@ where
     run(file, args, timeout, None, None)
 }
 
+/// Runs a program as the signed-in user without admin, even when this process is elevated: it borrows the
+/// token of the desktop shell, which always runs as the user. Output goes through a temp file.
+pub fn run_as_user(file: &str, args: &[String], timeout: Duration) -> ProcResult {
+    if !crate::tools::is_elevated() {
+        return run_simple(file, args, timeout);
+    }
+    run_with_shell_token(file, args, timeout).unwrap_or_else(|e| ProcResult::new(-1, format!("Could not start it without admin: {e}"), false))
+}
+
+fn run_with_shell_token(file: &str, args: &[String], timeout: Duration) -> Result<ProcResult, String> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
+    use windows::Win32::Security::{
+        DuplicateTokenEx, SecurityImpersonation, TOKEN_ADJUST_DEFAULT, TOKEN_ADJUST_SESSIONID, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE, TOKEN_QUERY,
+        TokenPrimary,
+    };
+    use windows::Win32::System::Threading::{
+        CREATE_NEW_CONSOLE, CREATE_PROCESS_LOGON_FLAGS, CreateProcessWithTokenW, GetExitCodeProcess, OpenProcess, OpenProcessToken,
+        PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, STARTF_USESHOWWINDOW, STARTUPINFOW, WaitForSingleObject,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetShellWindow, GetWindowThreadProcessId, SW_HIDE};
+    use windows::core::{PCWSTR, PWSTR};
+
+    let shell = unsafe { GetShellWindow() };
+    if shell.is_invalid() {
+        return Err("Explorer isn't running".into());
+    }
+    let mut pid = 0u32;
+    unsafe { GetWindowThreadProcessId(shell, Some(&mut pid as *mut u32)) };
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.map_err(|e| e.message())?;
+    let mut shell_token = HANDLE::default();
+    let opened = unsafe { OpenProcessToken(process, TOKEN_DUPLICATE, &mut shell_token) };
+    unsafe { CloseHandle(process).ok() };
+    opened.map_err(|e| e.message())?;
+    let mut token = HANDLE::default();
+    let access = TOKEN_QUERY | TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID;
+    let dup = unsafe { DuplicateTokenEx(shell_token, access, None, SecurityImpersonation, TokenPrimary, &mut token) };
+    unsafe { CloseHandle(shell_token).ok() };
+    dup.map_err(|e| e.message())?;
+
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or_default();
+    let out_file = std::env::temp_dir().join(format!("safe-toolbox-{}-{stamp}.txt", std::process::id()));
+    let quote = |s: &str| if s.is_empty() || s.contains([' ', '&', '|', '<', '>', '^', '(', ')']) { format!("\"{s}\"") } else { s.to_string() };
+    let program = std::iter::once(format!("\"{file}\"")).chain(args.iter().map(|a| quote(a))).collect::<Vec<_>>().join(" ");
+    let cmd = crate::tools::windows_dir().join("System32").join("cmd.exe");
+    let line = format!("\"{}\" /d /s /c \"{program} > \"{}\" 2>&1\"", cmd.display(), out_file.display());
+    let mut wide: Vec<u16> = line.encode_utf16().chain(Some(0)).collect();
+    let startup = STARTUPINFOW {
+        cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+        dwFlags: STARTF_USESHOWWINDOW,
+        wShowWindow: SW_HIDE.0 as u16,
+        ..Default::default()
+    };
+    let mut info = PROCESS_INFORMATION::default();
+    let started = unsafe {
+        CreateProcessWithTokenW(token, CREATE_PROCESS_LOGON_FLAGS(0), PCWSTR::null(), Some(PWSTR(wide.as_mut_ptr())), CREATE_NEW_CONSOLE, None, PCWSTR::null(), &startup, &mut info)
+    };
+    unsafe { CloseHandle(token).ok() };
+    started.map_err(|e| e.message())?;
+    unsafe { CloseHandle(info.hThread).ok() };
+
+    let start = Instant::now();
+    let mut timed_out = false;
+    while unsafe { WaitForSingleObject(info.hProcess, 200) } != WAIT_OBJECT_0 {
+        if start.elapsed() >= timeout {
+            timed_out = true;
+            kill_tree(info.dwProcessId);
+            break;
+        }
+    }
+    let mut code = 0u32;
+    unsafe {
+        let _ = GetExitCodeProcess(info.hProcess, &mut code);
+        CloseHandle(info.hProcess).ok();
+    }
+    let raw = std::fs::read(&out_file).unwrap_or_default();
+    let _ = std::fs::remove_file(&out_file);
+    let mut output: String = String::from_utf8_lossy(&raw)
+        .split('\n')
+        .map(clean_line)
+        .filter(|l| !l.is_empty())
+        .map(|l| l + "\n")
+        .collect();
+    if timed_out {
+        output.push_str(&format!("Stopped after {:.0} minutes without finishing.\n", timeout.as_secs_f64() / 60.0));
+    }
+    Ok(ProcResult::new(if timed_out { -1 } else { code as i32 }, output, timed_out))
+}
+
 fn kill_tree(pid: u32) {
     let _ = Command::new("taskkill")
         .args(["/PID", &pid.to_string(), "/T", "/F"])

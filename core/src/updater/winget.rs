@@ -17,6 +17,8 @@ pub enum WingetOutcome {
     AlreadyCurrent,
     RetryForce,
     RetryNonAdmin,
+    /// Installed for one account only: winget refuses to touch it from admin, so it runs as the user.
+    UserScope,
     InUse,
     Failed,
 }
@@ -139,6 +141,9 @@ pub fn classify(exit_code: i32, output: &str, elevated: bool) -> WingetOutcome {
     }
     if exit_code == UPDATE_NOT_APPLICABLE || has("No available upgrade found") || has("No newer package versions are available") {
         return WingetOutcome::AlreadyCurrent;
+    }
+    if has("installed within the user scope") || has("not permitted from an administrator context") {
+        return WingetOutcome::UserScope;
     }
     if has("Access is denied") || has("being used by another process") {
         return WingetOutcome::InUse;
@@ -282,6 +287,8 @@ mod tests {
         assert_eq!(classify(UPDATE_NOT_APPLICABLE, "", false), WingetOutcome::AlreadyCurrent);
         assert_eq!(classify(1, "Access is denied.", false), WingetOutcome::InUse);
         assert_eq!(classify(SHELL_EXEC_INSTALL_FAILED, "", true), WingetOutcome::RetryNonAdmin);
+        let user_only = "The requested operation is not permitted from an administrator context on packages installed within the user scope.";
+        assert_eq!(classify(-1978335103, user_only, true), WingetOutcome::UserScope);
         assert_eq!(classify(SHELL_EXEC_INSTALL_FAILED, "", false), WingetOutcome::Failed);
     }
 
