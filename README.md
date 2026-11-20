@@ -10,7 +10,7 @@ It is one file, `Safe Toolbox.exe`, with no installer and no files beside it.
 | Page | What it does | Changes anything? |
 | --- | --- | --- |
 | Home | One card per tool: safe updates waiting, space to free, health warnings, background checks, recent runs. | No |
-| Updates | winget apps, Chocolatey, Scoop, Windows Update and drivers, the NVIDIA driver, pip, npm, Rust and Claude Code, checked together. Updates that could break something are left out, and the list says why. You can skip one version or hide an update for good. | Only what you tick, after you press Update |
+| Updates | winget apps, Chocolatey, Scoop, pip, npm, Rust and Claude Code, checked together. Updates that could break something are left out, and the list says why. You can skip one version or hide an update for good. Windows updates, drivers and the NVIDIA driver are listed too, but Windows Update and the NVIDIA app install them: the page opens those for you. | Only what you tick, after you press Update |
 | Clean up | Everything Windows Disk Cleanup covers, plus app and browser caches it never sees. Every path goes through the guard first (below). | Only the rows you tick |
 | Big files | The largest files in your profile, with a tag for models, videos, archives and installers. | Only a file you choose, and it goes to the Recycle Bin |
 | Health | Blue screens with their stop codes, unexpected shutdowns, app crashes, drive health and wear, battery wear and the antivirus Windows Security reports. All read from what Windows already records. A button makes a restore point. | Only if you make a restore point |
@@ -27,8 +27,10 @@ It is one file, `Safe Toolbox.exe`, with no installer and no files beside it.
 - Change Windows services, privacy settings or telemetry.
 - Touch documents, pictures, videos, game saves, AI models, `.ssh`, installed tools or synced folders
   without you picking that exact file.
-- Run as admin on its own. The window always runs as you. The parts that need admin (Windows Update, the
-  Windows cleanup rows, repairs, drive wear) start a separate helper and Windows asks you each time.
+- Run as admin on its own. The window always runs as you. The parts that need admin (Chocolatey and
+  machine-wide app updates, the Windows cleanup rows, repairs, drive wear) start a separate helper and
+  Windows asks you each time.
+- Install Windows updates or drivers. Windows Update does that.
 
 ## The cleaner's guard
 
@@ -40,16 +42,14 @@ app's cache is skipped and the row says which app to close. The reasoning for ea
 
 ## Accent colour
 
-WinUI apps normally paint buttons, ticks and switches in your accent colour whatever Windows is set to.
 Safe Toolbox follows the Windows switch "Show accent colour on title bars and window borders": when it is
-off, the app uses neutral greys. Settings can also force the accent on or off.
+off, buttons, ticks and switches use neutral greys. Settings can also force the accent on or off.
 
-## First launch and disk use
+## The window
 
-The exe holds everything WinUI needs. On first launch .NET unpacks it once to
-`%TEMP%\.net\<exe name>\<id>` (about 220 MB, two seconds). Later launches start from there in about a
-second. A new version unpacks to a new folder. When Safe Toolbox starts, it removes its own older
-folders, except any a running copy still uses. The cleaner never deletes `%TEMP%\.net`.
+The logic is Rust. The window is a WebView2 page built from the Fluent Desktop components (licence in
+`app/ui/NOTICE.txt`), with Mica or Mica Alt behind it and Segoe Fluent Icons from Windows. WebView2 ships
+with Windows 11, so nothing else is installed. Nothing is unpacked on launch.
 
 ## Where it keeps things
 
@@ -75,6 +75,7 @@ Turning both checks off removes the task.
 ```
 "Safe Toolbox.exe"                  the window
 "Safe Toolbox.exe" --check --json   the background check once, printed as JSON, for scripts and agents
+"Safe Toolbox.exe" --open safe-toolbox:updates   the window on one page (what a notification click runs)
 ```
 
 The exe also runs as its own elevated helpers (`--worker`, `--clean-worker`, `--repair`, `--admin-task`).
@@ -82,24 +83,23 @@ Those are started by the app, not by hand.
 
 ## Build
 
-Needs the .NET 10 SDK on Windows.
+Needs Rust (stable) on Windows.
 
 ```
-dotnet test SafeToolbox.slnx -p:Platform=x64
-dotnet publish src/SafeToolbox -c Release -p:Platform=x64 -o artifacts/publish
+cargo test -p toolbox-core
+cargo build --release -p safe-toolbox
 ```
 
-The publish output is one `SafeToolbox.exe` (about 92 MB, compressed). It can be renamed: the app's resource
-index is `resources.pri`, which WinUI finds whatever the exe is called.
+The output is `target/release/safe-toolbox.exe`, one file. It can be renamed.
 
 ## Layout
 
 ```
-src/SafeUpdater.Core       update sources, safety rules, the elevated update worker
-src/SafeDiskCleaner.Core   cleanup rules, the guard, the elevated cleanup worker
-src/SafeToolbox.Core       settings, health, repairs, PATH doctor, big files, app list, history, schedule
-src/SafeToolbox            the WinUI 3 app
-tests/                     one test project per core library
+core/src/updater    update sources, safety rules, the elevated update worker
+core/src/cleaner    cleanup rules, the guard, the elevated cleanup worker
+core/src/toolbox    settings, health, repairs, PATH doctor, big files, app list, history, schedule, notifications
+app/src             the Tauri window, its commands and the command-line modes
+app/ui              the pages (HTML, CSS, JS) and the Fluent Desktop kit
 ```
 
 ## Licence

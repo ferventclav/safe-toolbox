@@ -1,0 +1,119 @@
+/* Safe Toolbox window. Layout only: colours, controls and type come from the Fluent Desktop kit. */
+html,body{height:100%;margin:0;background:transparent;overflow:hidden}
+html[data-backdrop="Solid"] body{background:var(--solid-background-fill-base)}
+*{box-sizing:border-box}
+h1,h2,h3,p{margin:0}
+button{font:inherit}
+
+/* Segoe Fluent Icons ships with Windows 11; nothing is bundled. */
+.ico{display:inline-flex;align-items:center;justify-content:center;flex:none;width:16px;height:16px;font:normal 16px/1 "Segoe Fluent Icons","Segoe MDL2 Assets";speak:never;user-select:none}
+.ico--12{width:12px;height:12px;font-size:12px}
+.ico--20{width:20px;height:20px;font-size:20px}
+.ico--24{width:24px;height:24px;font-size:24px}
+.t-success{color:var(--system-fill-success)}
+.t-caution{color:var(--system-fill-caution)}
+.t-critical{color:var(--system-fill-critical)}
+.t-muted,.muted{color:var(--text-fill-secondary)}
+.t-accent{color:var(--accent-text-fill-primary)}
+
+/* Window: the pane sits on the backdrop, the content layer has the rounded top-left corner. */
+.shell{display:grid;grid-template-columns:288px minmax(0,1fr);height:100vh}
+.pane{width:auto;height:100vh;padding:4px 0 6px;overflow-y:auto;overflow-x:hidden}
+.pane .fd-nav-item{width:calc(100% - 8px);border:0}
+.pane .fd-nav-item .fd-badge{margin-left:auto}
+.pane .grow{flex:1 1 auto}
+.content{height:100vh;margin:0!important;overflow:auto;outline:none;min-width:0}
+.page{max-width:120rem;padding:28px 40px 48px}
+@media (max-width:1080px){
+  .shell{grid-template-columns:52px minmax(0,1fr)}
+  .pane .fd-nav-item{justify-content:center;padding:0}
+  .pane .fd-nav-item>span,.pane .fd-nav-item .fd-badge{display:none}
+  .page{padding:24px 24px 40px}
+}
+
+/* Page frame */
+.head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 24px;margin-bottom:16px}
+.head__text{max-width:84ch}
+.head__text p{margin-top:4px;color:var(--text-fill-secondary)}
+.cmds{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.status{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;margin:0 0 12px}
+.notes{display:flex;flex-direction:column;gap:8px;margin:0 0 16px}
+.notes:empty{display:none}
+.sec{margin:28px 0 8px}
+.sec:first-child{margin-top:0}
+.stack{display:flex;flex-direction:column;gap:4px}
+.stack--12{gap:12px}
+.row{display:flex;align-items:center;gap:12px;min-width:0}
+.row--top{align-items:flex-start}
+.row>.grow{flex:1 1 auto;min-width:0}
+.wrap{flex-wrap:wrap}
+.mono{font-family:var(--font-mono);font-size:12px;line-height:18px}
+.break{overflow-wrap:anywhere}
+.small{font-size:12px;line-height:16px}
+.nowrap{white-space:nowrap}
+.right{margin-left:auto}
+a.fd-link{cursor:pointer}
+
+/* Home */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,360px),1fr));gap:12px}
+.card{display:flex;flex-direction:column;gap:12px;min-height:200px}
+.card__head{display:flex;align-items:flex-start;gap:12px}
+.card__head .ico{margin-top:2px;color:var(--accent-text-fill-primary)}
+.card__body{flex:1 1 auto;display:flex;flex-direction:column;gap:6px}
+.card__foot{display:flex;flex-wrap:wrap;gap:8px}
+.big{font-family:var(--font-display);font-size:28px;line-height:36px;font-weight:600}
+.tools{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:4px;margin:0 -12px}
+.tool{display:flex;gap:12px;align-items:flex-start;padding:8px 12px;text-align:left;color:inherit;background:var(--subtle-fill-transparent);border:0;border-radius:var(--radius-control);cursor:default}
+.tool:hover{background:var(--subtle-fill-secondary)}
+.tool:active{background:var(--subtle-fill-tertiary)}
+.tool .ico{margin-top:2px}
+.tool small{display:block;color:var(--text-fill-secondary);font-size:12px;line-height:16px}
+
+/* Two panes: list on the left, details on the right */
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,420px);gap:16px;align-items:start}
+.side{position:sticky;top:0;max-height:calc(100vh - 32px);overflow:auto}
+@media (max-width:1240px){.split{grid-template-columns:minmax(0,1fr)}.side{position:static;max-height:none}}
+
+/* Grouped lists (Updates, Clean up, History): one card per group, rows divided by hairlines */
+.group{padding:0;overflow:hidden}
+.group__head{display:flex;align-items:center;gap:12px;padding:12px 16px;min-height:56px}
+.group__head .fd-check{flex:none}
+.group__title{flex:1 1 auto;min-width:0}
+.group__title small{display:block;color:var(--text-fill-secondary);font-size:12px;line-height:16px}
+.item{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 16px;border-top:1px solid var(--divider-stroke-default);position:relative}
+.item[aria-selected="true"]{background:var(--subtle-fill-secondary)}
+.item[aria-selected="true"]::before{content:"";position:absolute;left:0;top:50%;width:3px;height:16px;margin-top:-8px;border-radius:2px;background:var(--accent-fill-default)}
+.item:hover{background:var(--subtle-fill-secondary)}
+.item__main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;cursor:default;text-align:left;padding:4px 0;color:inherit;background:none;border:0}
+.item__main small{color:var(--text-fill-secondary);font-size:12px;line-height:16px}
+.item__end{display:flex;align-items:center;gap:8px;flex:none;text-align:right}
+.item--off .item__main>span:first-child{color:var(--text-fill-disabled)}
+.fd-check>span:last-child{flex:none}
+.slot{flex:none;width:20px}
+
+/* Details pane */
+.facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 16px;margin:12px 0}
+.facts dt{color:var(--text-fill-secondary)}
+.facts dd{margin:0;overflow-wrap:anywhere}
+.lines{display:flex;flex-direction:column;gap:6px}
+.out{margin:0;padding:12px;min-height:240px;max-height:calc(100vh - 220px);overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--control-fill-secondary);border:1px solid var(--card-stroke-default);border-radius:var(--radius-control)}
+.out .h{font-weight:600;color:var(--text-fill-primary)}
+.out .ok{color:var(--system-fill-success)}
+.out .bad{color:var(--system-fill-critical)}
+
+/* Progress line under a header */
+.meter{display:flex;flex-direction:column;gap:6px;min-width:240px;max-width:420px}
+
+/* Settings */
+.settings{display:flex;flex-direction:column;gap:4px;max-width:1000px}
+.settings .fd-setting{min-height:68px}
+.settings .fd-setting .ico{color:var(--text-fill-primary)}
+.settings .fd-setting__text{flex:1 1 320px}
+.settings .fd-setting>.fd-combo{min-width:200px}
+.settings .note{padding:4px 16px 8px 48px;color:var(--text-fill-secondary);font-size:12px;line-height:16px}
+
+/* Empty and loading states */
+.empty{display:flex;align-items:center;gap:12px;padding:16px;color:var(--text-fill-secondary)}
+.loading{display:flex;align-items:center;gap:12px;padding:24px 0;color:var(--text-fill-secondary)}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:.01ms!important}}

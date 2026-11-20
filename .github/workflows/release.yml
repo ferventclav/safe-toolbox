@@ -39,6 +39,6 @@ jobs:
             SafeToolbox.exe.sha256
           body: |
             Download `SafeToolbox.exe` and run it. It is the whole app: no installer, no other files.
-            The first start takes a couple of seconds while it unpacks itself. Windows may show a
-            SmartScreen warning because the app is not code-signed: choose **More info**, then
-            **Run anyway**. See the README for what each page does and what it never touches.
+            It uses the WebView2 runtime that ships with Windows 11. Windows may show a SmartScreen
+            warning because the app is not code-signed: choose **More info**, then **Run anyway**.
+            See the README for what each page does and what it never touches.

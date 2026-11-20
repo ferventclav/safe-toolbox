@@ -157,25 +157,10 @@ Every difference makes the app more careful, not less:
 
 ## Versions
 
-- **.NET 10 (LTS)**. The first build used .NET 8 as the spec asked, but .NET 8 support ends on
-  10 November 2026, so the owner chose to move to .NET 10 before any release. The app is
-  self-contained, so friends still need nothing installed.
-- **Windows App SDK 2.6.5**, the current stable release on NuGet when this was built. The first
-  build used 1.8.260921001 (the spec said "latest stable 1.x"); the owner chose to move to the
-  2.x line. The app's code compiled unchanged against 2.6.5. Note that 2.6.5 was published the
-  same day this was built; if it misbehaves on a real PC, 2.6.4 is the previous release.
-- **Download size**: the zip is about 97 MB (about 232 MB unzipped) with .NET 10 and
-  Windows App SDK 2.6.5, up from 88 MB with .NET 8 and 1.8. Almost all of it is the bundled
-  .NET and Windows App SDK runtimes, which is what lets it run on a PC with nothing
-  installed. The self-contained Windows App SDK copies its whole runtime, including Windows
-  ML (`onnxruntime.dll`, `DirectML.dll`, about 40 MB) that this app never uses. Referencing
-  only the WinUI, Foundation and related component packages was tried and did not drop
-  them, so the app uses the standard metapackage. Trimming would need hand-deleting runtime
-  files, which is not worth the risk of a broken install.
+- **Rust (2024 edition) and Tauri 2.** The window is WebView2, which ships with Windows 11, so the
+  exe carries no runtime and nothing is unpacked or installed.
 
 ## Not verified
 
-The engine was built and tested on Windows in CI (`windows-latest`), and the published app is
-started once there as a smoke test. The window itself, Mica, dark mode, high DPI, the folder
-picker, "Restart as admin" and an actual clean on a real, lived-in PC can only be checked on
-a real Windows desktop.
+The cleanup rules and the guard have unit tests (`cargo test -p toolbox-core`), and CI starts the
+built exe once as a smoke test. A clean that needs admin on a real, lived-in PC is checked by hand.

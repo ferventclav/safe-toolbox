@@ -1,7 +1,4 @@
-bin/
-obj/
-publish/
-TestResults/
-*.user
-.vs/
+target/
+app/gen/
 artifacts/
+publish/
